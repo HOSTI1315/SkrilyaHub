@@ -1,36 +1,4 @@
---[[
-  SkrilyaHub (Re:Rangers X) — 1 Lua file for injector.
-  Uses FluentPlus + SaveManager + InterfaceManager.
-  No game require() — only game, WaitForChild, FireServer.
-
-  Examples:
-    -- Modes + Start
-    Game.EnterMode("Fate Mode", true)
-    Game.EnterMode("AdventureMode", true)
-    Game.EnterDungeon({ Difficulty = "Normal" })
-    task.wait(0.6) Game.StartGame()
-
-    -- Speed, room, lobby
-    Game.SetSpeed(2)
-    -- Состояние по дампу: Game.GetGameSpeed() → 1|2|3, Game.HasSpeedGamepass3x() → bool, Game.IsAutoPlayEnabled() → bool
-    Game.SetRoomMode("Story") Game.SetRoomWorld("Namek") Game.SetRoomChapter("Chapter 1") Game.SetRoomDifficulty("Normal")
-    Game.SetAutoJoin(true, { mode = "Story", world = "Namek", difficulty = "Normal" })
-    Game.PortalStart() Game.ClaimDailyReward(1) Game.RedeemCode("CODE") Game.ClaimBattlepassAll()
-
-    -- Match settings
-    Game.SetAutoRetry(true) Game.SetAutoNext(true) Game.SetAutoLeave(true) Game.SetAutoVoteStart(true) Game.SetAutoSetMaxSpeed(true)
-    Game.VotePlaying() Game.VoteRetry() Game.VoteNext() Game.RestartMatch() Game.ToggleAutoPlay()
-
-    -- Units (Equip/UnEquip и т.д. из скрипта обходят клиентскую проверку "exit mode first")
-    local units = Game.GetUnitsList(game.Players.LocalPlayer)
-    Game.EquipBest() Game.DeployUnit(units[1], true) Game.FeedUnit(units[1], { ["ItemName"] = 5 })
-    -- Открытие UI по дампу: Game.TryOpenMerchant() Game.TryOpenBattlePass() Game.OpenTraitsUI(unitFolder) Game.OpenCollection("Traits")
-
-    -- Merchant / Summon / Webhook / Free Gamepass
-    Game.BuyMerchantItem("ItemName", 10)
-    Game.SelectBanner("UnitName") Game.Summon("10x", "Standard", {})
-    Game.SetWebhook(true, "https://discord.com/api/webhooks/...") Game.SendWebhookMessage("Test")
-]]
+print("v2")
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -428,57 +396,68 @@ local function setupRangerRewardsHook()
 		rangerAutofarmRewardsGuard = nil
 	end
 	if not rangerAutofarmEnabled then return end
-	task.spawn(function()
-		local gui = LocalPlayer:FindFirstChild("PlayerGui")
-		if not gui then return end
-		local rewardsUI = gui:FindFirstChild("RewardsUI") or gui:FindFirstChild("ResultUI")
-		if not rewardsUI then rewardsUI = gui:WaitForChild("RewardsUI", 8) end
-		if not rewardsUI then rewardsUI = gui:WaitForChild("ResultUI", 3) end
-		if not rewardsUI or not rangerAutofarmEnabled then return end
-		rangerAutofarmRewardsGuard = rewardsUI:GetPropertyChangedSignal("Enabled"):Connect(function()
-			if not rewardsUI.Enabled or not rangerAutofarmEnabled then return end
-			task.defer(function()
-				task.wait(0.35)
-				local isWon = false
-				local isDefeat = false
-				pcall(function()
-					local main = rewardsUI:FindFirstChild("Main")
-					local left = main and main:FindFirstChild("LeftSide")
-					local gs = left and left:FindFirstChild("GameStatus")
-					local raw = (gs and gs:IsA("TextLabel")) and (gs.Text or "") or ""
-					if raw:lower():find("won") or raw:find("WON") then isWon = true end
-					if raw:lower():find("defeat") or raw:find("DEFEAT") or raw:lower():find("game over") then isDefeat = true end
-				end)
-				if isDefeat then return end
-				if not isWon and not rangerAutofarmCurrentStage then return end
-				if not isWon then isWon = true end
-				local displayKey = nil
-				local world, ch = nil, nil
-				local stage = Game.GetCurrentRangerStage()
-				if stage and stage.displayKey then
-					displayKey = stage.displayKey
-					world, ch = stage.world, stage.chapterNum
-				elseif rangerAutofarmCurrentStage then
-					world = rangerAutofarmCurrentStage.world
-					ch = rangerAutofarmCurrentStage.chapterNum
-					displayKey = Game.BuildRangerDisplayKey(world, ch)
-				end
-				if displayKey and world and ch then
-					RangerProgressConfig.SetCompleted(displayKey, 1)
-					local maxCh = getRangerChapterCount(world)
-					if ch < maxCh then
-						Game.VoteNext()
-						rangerAutofarmCurrentStage = { world = world, chapterNum = ch + 1 }
+	local gui = LocalPlayer:FindFirstChild("PlayerGui")
+	if not gui then return end
+	local rewardsUI = gui:FindFirstChild("RewardsUI") or gui:FindFirstChild("ResultUI")
+	if not rewardsUI then return end
+	rangerAutofarmRewardsGuard = rewardsUI:GetPropertyChangedSignal("Enabled"):Connect(function()
+		if not rewardsUI.Enabled or not rangerAutofarmEnabled then return end
+		task.defer(function()
+			task.wait(0.05)
+			if not rangerAutofarmEnabled then return end
+			local isWon = false
+			local isDefeat = false
+			pcall(function()
+				local main = rewardsUI:FindFirstChild("Main")
+				local left = main and main:FindFirstChild("LeftSide")
+				local gs = left and left:FindFirstChild("GameStatus")
+				local raw = (gs and gs:IsA("TextLabel")) and (gs.Text or "") or ""
+				if raw:lower():find("won") or raw:find("WON") then isWon = true end
+				if raw:lower():find("defeat") or raw:find("DEFEAT") or raw:lower():find("game over") then isDefeat = true end
+			end)
+			if isDefeat then return end
+			if not isWon and not rangerAutofarmCurrentStage then return end
+			if not isWon then isWon = true end
+			local displayKey = nil
+			local world, ch = nil, nil
+			local stage = Game.GetCurrentRangerStage()
+			if stage and stage.displayKey then
+				displayKey = stage.displayKey
+				world, ch = stage.world, stage.chapterNum
+			elseif rangerAutofarmCurrentStage then
+				world = rangerAutofarmCurrentStage.world
+				ch = rangerAutofarmCurrentStage.chapterNum
+				displayKey = Game.BuildRangerDisplayKey(world, ch)
+			end
+			if displayKey and world and ch then
+				RangerProgressConfig.SetCompleted(displayKey, 1)
+				local maxCh = getRangerChapterCount(world)
+				if ch < maxCh then
+					Game.VoteNext()
+					rangerAutofarmCurrentStage = { world = world, chapterNum = ch + 1 }
+				else
+					Game.LeaveRoom()
+					rangerAutofarmCurrentStage = nil
+					if isRangerCycleComplete() then
+						RangerProgressConfig.Reset()
+						Fluent:Notify({ Title = "Ranger Autofarm", Content = "Cycle complete. Config reset.", Duration = 4 })
 					else
-						Game.LeaveRoom()
-						rangerAutofarmCurrentStage = nil
-						if isRangerCycleComplete() then
-							RangerProgressConfig.Reset()
-							Fluent:Notify({ Title = "Ranger Autofarm", Content = "Cycle complete. Config reset.", Duration = 4 })
-						end
+						task.spawn(function()
+							local waitCount = 0
+							while not isInLobby() and waitCount < 30 do
+								task.wait(0.2)
+								waitCount = waitCount + 1
+							end
+							if not rangerAutofarmEnabled then return end
+							local nextWorld, nextCh, _ = getNextRangerStage()
+							if nextWorld and nextCh then
+								rangerAutofarmCurrentStage = { world = nextWorld, chapterNum = nextCh }
+								Game.EnterRangerStage(nextWorld, nextCh)
+							end
+						end)
 					end
 				end
-			end)
+			end
 		end)
 	end)
 end

@@ -1,4 +1,4 @@
-print("vChernaEdit")
+print("vChernaEdit1")
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -29,7 +29,7 @@ end)
 task.wait(0.5)
 
 -- Автоперезапуск при телепорте в другое лобби: подставь сырую ссылку на этот скрипт (raw GitHub/Pastebin и т.д.)
-local SCRIPT_RELOAD_URL = "https://raw.githubusercontent.com/HOSTI1315/SkrilyaHub/refs/heads/main/Re%3ARangers%20X.lua"
+local SCRIPT_RELOAD_URL = ""
 local queueteleport = (function()
 	local g = getgenv()
 	if type(g.queue_on_teleport) == "function" then return g.queue_on_teleport end
@@ -870,24 +870,37 @@ function Game.SetWebhook(enabled, url)
 				task.wait(0.4)
 				local timeStr = "—"
 				local statusStr = "—"
+				local modeStr = "—"
+				local mapStr = "—"
 				local totalGold = "—"
 				local totalGems = "—"
 				local rewardParts = {}
 				pcall(function()
-					-- RewardsUI.Main.LeftSide.*
+					if not LocalPlayer then return end
 					local main = rewardsUI:FindFirstChild("Main")
 					if not main then return end
 					local left = main:FindFirstChild("LeftSide")
 					if not left then return end
 
-					-- Время: TotalTime.Text = "Total Time: 00:00:22"
+					-- Mode, World, Chapter (карта)
+					local modeLabel = left:FindFirstChild("Mode")
+					local worldLabel = left:FindFirstChild("World")
+					local chapterLabel = left:FindFirstChild("Chapter")
+					if modeLabel and modeLabel:IsA("TextLabel") then
+						modeStr = (modeLabel.Text or ""):gsub("^%s+", ""):gsub("%s+$", "") or "—"
+					end
+					if worldLabel and worldLabel:IsA("TextLabel") and chapterLabel and chapterLabel:IsA("TextLabel") then
+						local w = (worldLabel.Text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+						local c = (chapterLabel.Text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+						mapStr = (#w > 0 and #c > 0) and (w .. " • " .. c) or w or c or "—"
+					end
+
 					local tt = left:FindFirstChild("TotalTime")
 					if tt and tt:IsA("TextLabel") then
 						local raw = tt.Text or ""
 						timeStr = raw:match("(%d+:%d+:%d+)$") or raw
 					end
 
-					-- Статус: GameStatus.Text ~= "~ WON" / "~ DEFEAT"
 					local gs = left:FindFirstChild("GameStatus")
 					if gs and gs:IsA("TextLabel") then
 						local raw = gs.Text or ""
@@ -900,89 +913,79 @@ function Game.SetWebhook(enabled, url)
 						end
 					end
 
-					-- Награды: Rewards.ItemsList.*
 					local rewards = left:FindFirstChild("Rewards")
 					local list = rewards and rewards:FindFirstChild("ItemsList")
-					if not list then return end
-
-					for _, child in ipairs(list:GetChildren()) do
-						-- пропускаем layout / corner
-						if child:IsA("UIGridLayout") or child:IsA("UICorner") then
-							continue
-						end
-
-						local frame = child:FindFirstChild("Frame")
-						local itemFrame = frame and frame:FindFirstChild("ItemFrame")
-						local info = itemFrame and itemFrame:FindFirstChild("Info")
-						if info then
-							local nameLabel = info:FindFirstChild("ItemsNames")
-							local amountLabel = info:FindFirstChild("DropAmonut")
-							if nameLabel and amountLabel and nameLabel:IsA("TextLabel") and amountLabel:IsA("TextLabel") then
-								local name = nameLabel.Text or "?"
-								local amt = amountLabel.Text or ""
-								table.insert(rewardParts, string.format("%s x%s", name, amt))
+					if list then
+						for _, child in ipairs(list:GetChildren()) do
+							if child:IsA("UIGridLayout") or child:IsA("UICorner") then continue end
+							local frame = child:FindFirstChild("Frame")
+							local itemFrame = frame and frame:FindFirstChild("ItemFrame")
+							local info = itemFrame and itemFrame:FindFirstChild("Info")
+							if info then
+								local nameLabel = info:FindFirstChild("ItemsNames")
+								local amountLabel = info:FindFirstChild("DropAmonut")
+								if nameLabel and amountLabel and nameLabel:IsA("TextLabel") and amountLabel:IsA("TextLabel") then
+									table.insert(rewardParts, string.format("%s × %s", nameLabel.Text or "?", amountLabel.Text or "?"))
+								end
 							end
 						end
 					end
 
-					-- Текущие балансы (HUD.MenuFrame.LeftSide.Frame.*.Numbers)
 					local pg = LocalPlayer:FindFirstChild("PlayerGui")
 					local hud = pg and pg:FindFirstChild("HUD")
 					local menu = hud and hud:FindFirstChild("MenuFrame")
 					local leftSide = menu and menu:FindFirstChild("LeftSide")
 					local lfFrame = leftSide and leftSide:FindFirstChild("Frame")
 					if lfFrame then
-						local goldFrame = lfFrame:FindFirstChild("Gold")
-						local gemsFrame = lfFrame:FindFirstChild("Gems")
-						local goldLabel = goldFrame and goldFrame:FindFirstChild("Numbers")
-						local gemsLabel = gemsFrame and gemsFrame:FindFirstChild("Numbers")
-						if goldLabel and goldLabel:IsA("TextLabel") then
-							totalGold = goldLabel.Text or totalGold
-						end
-						if gemsLabel and gemsLabel:IsA("TextLabel") then
-							totalGems = gemsLabel.Text or totalGems
-						end
+						local goldLabel = lfFrame:FindFirstChild("Gold") and lfFrame.Gold:FindFirstChild("Numbers")
+						local gemsLabel = lfFrame:FindFirstChild("Gems") and lfFrame.Gems:FindFirstChild("Numbers")
+						if goldLabel and goldLabel:IsA("TextLabel") then totalGold = goldLabel.Text or totalGold end
+						if gemsLabel and gemsLabel:IsA("TextLabel") then totalGems = gemsLabel.Text or totalGems end
 					end
 				end)
 
-				local rewardsBlock
-				if #rewardParts > 0 then
-					rewardsBlock = table.concat(rewardParts, "\n")
-				else
-					rewardsBlock = "—"
-				end
+				local rewardsText = #rewardParts > 0 and table.concat(rewardParts, "\n") or "—"
+				local playerName = LocalPlayer and (LocalPlayer.DisplayName or LocalPlayer.Name) or "?"
 
-				-- Формируем человекочитаемый отчёт как на референсе
-				local lines = {}
-				table.insert(lines, "Re:Rangers X — Match Result")
-				table.insert(lines, "")
-				table.insert(lines, "Player: " .. (LocalPlayer.DisplayName or LocalPlayer.Name))
-				table.insert(lines, "Result: " .. statusStr)
-				table.insert(lines, "Duration: " .. timeStr)
-				table.insert(lines, "")
-				table.insert(lines, "Rewards:")
-				table.insert(lines, rewardsBlock)
-				table.insert(lines, "")
-				table.insert(lines, "Currencies:")
-				table.insert(lines, "Gold: " .. tostring(totalGold))
-				table.insert(lines, "Gems: " .. tostring(totalGems))
-				table.insert(lines, "")
-				table.insert(lines, "SkrilyaHub • " .. os.date("%Y-%m-%d %H:%M:%S"))
-
-				local content = table.concat(lines, "\n")
-				Game.SendWebhookMessage(content)
+				local embedColor = (statusStr == "WON") and 3066993 or 15158332
+				local embed = {
+					title = "Re:Rangers X — Match Result",
+					color = embedColor,
+					fields = {
+						{ name = "Player", value = playerName, inline = true },
+						{ name = "Result", value = statusStr, inline = true },
+						{ name = "Duration", value = timeStr, inline = true },
+						{ name = "Mode", value = modeStr, inline = true },
+						{ name = "Map", value = mapStr, inline = false },
+						{ name = "Rewards", value = rewardsText, inline = false },
+						{ name = "Gold", value = tostring(totalGold), inline = true },
+						{ name = "Gems", value = tostring(totalGems), inline = true },
+					},
+					footer = { text = "SkrilyaHub • " .. os.date("%Y-%m-%d %H:%M:%S") }
+				}
+				Game.SendWebhookMessage(nil, embed)
 			end)
 		end)
 	end
 end
 
-function Game.SendWebhookMessage(content)
+function Game.SendWebhookMessage(content, embed)
 	if not webhookEnabled or not webhookUrl or #webhookUrl < 10 then return end
 	if type(httprequest) ~= "function" then return end
 	pcall(function()
+		local payload = {}
+		if content and #tostring(content) > 0 then
+			payload.content = tostring(content)
+		end
+		if embed and type(embed) == "table" then
+			payload.embeds = { embed }
+		end
+		if not payload.content and not payload.embeds then
+			payload.content = "Test"
+		end
 		httprequest({
 			Url = webhookUrl,
-			Body = HttpService:JSONEncode({ content = content or "Test" }),
+			Body = HttpService:JSONEncode(payload),
 			Method = "POST",
 			Headers = {
 				["content-type"] = "application/json"

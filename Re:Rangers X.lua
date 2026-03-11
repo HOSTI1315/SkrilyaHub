@@ -994,7 +994,7 @@ local Window = Fluent:CreateWindow({
 	MinimizeKey = Enum.KeyCode.RightShift
 })
 if Fluent.GUI and Fluent.GUI:IsA("ScreenGui") then
-	Fluent.GUI.DisplayOrder = 99999
+	Fluent.GUI.DisplayOrder = 5
 end
 
 local Tabs = {

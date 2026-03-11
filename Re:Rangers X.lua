@@ -1,4 +1,4 @@
-print("vChernaEdit")
+print("vChernaEdit2")
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -210,6 +210,7 @@ end
 
 -- In lobby = no Yen on LocalPlayer; in game = LocalPlayer.Yen exists
 local function isInLobby()
+	if not LocalPlayer then return true end
 	return not LocalPlayer:FindFirstChild("Yen")
 end
 

@@ -17,7 +17,7 @@ if not game:IsLoaded() then
 end
 
 -- Автоперезапуск при телепорте в другое лобби: подставь сырую ссылку на этот скрипт (raw GitHub/Pastebin и т.д.)
-local SCRIPT_RELOAD_URL = ""
+local SCRIPT_RELOAD_URL = "https://raw.githubusercontent.com/HOSTI1315/SkrilyaHub/refs/heads/main/Re%3ARangers%20X.lua"
 local queueteleport = (function()
 	local g = getgenv()
 	if type(g.queue_on_teleport) == "function" then return g.queue_on_teleport end

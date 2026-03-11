@@ -1,4 +1,4 @@
-print("v3FankBich")
+print("vChernaEdit")
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -463,22 +463,17 @@ local function connectRangerRewardsCallback(rewardsUI)
 					rangerAutofarmCurrentStage = nil
 					if isRangerCycleComplete() then
 						RangerProgressConfig.Reset()
-						Fluent:Notify({ Title = "Ranger Autofarm", Content = "Cycle complete. Config reset.", Duration = 4 })
-					else
-						task.spawn(function()
-							local waitCount = 0
-							while not isInLobby() and waitCount < 30 do
-								task.wait(0.2)
-								waitCount = waitCount + 1
-							end
-							if not rangerAutofarmEnabled then return end
-							local nextWorld, nextCh, _ = getNextRangerStage()
-							if nextWorld and nextCh then
-								rangerAutofarmCurrentStage = { world = nextWorld, chapterNum = nextCh }
-								Game.EnterRangerStage(nextWorld, nextCh)
-							end
-						end)
+						Fluent:Notify({ Title = "Ranger Autofarm", Content = "Cycle complete. Restarting...", Duration = 4 })
 					end
+					task.spawn(function()
+						task.wait(1)
+						if not rangerAutofarmEnabled then return end
+						local nextWorld, nextCh, _ = getNextRangerStage()
+						if nextWorld and nextCh then
+							rangerAutofarmCurrentStage = { world = nextWorld, chapterNum = nextCh }
+							Game.EnterRangerStage(nextWorld, nextCh)
+						end
+					end)
 				end
 			end
 		end)
@@ -994,7 +989,7 @@ local Window = Fluent:CreateWindow({
 	MinimizeKey = Enum.KeyCode.RightShift
 })
 if Fluent.GUI and Fluent.GUI:IsA("ScreenGui") then
-	Fluent.GUI.DisplayOrder = 5
+	Fluent.GUI.DisplayOrder = 99999
 end
 
 local Tabs = {
@@ -1195,6 +1190,22 @@ do
 			rangerAutofarmStatusLabel:SetDesc("Config reset")
 		end
 		Fluent:Notify({ Title = "Ranger Autofarm", Content = "Progress config cleared", Duration = 2 })
+	end })
+	s:AddButton({ Title = "Simulate End of Cycle (Test)", Description = "Mark all stages complete — next win will trigger restart", Callback = function()
+		local data = {}
+		for _, world in ipairs(RANGER_WORLDS) do
+			local maxCh = getRangerChapterCount(world)
+			for ch = 1, maxCh do
+				local key = Game.BuildRangerDisplayKey(world, ch)
+				if key then data[key] = 1 end
+			end
+		end
+		RangerProgressConfig.Save(data)
+		rangerAutofarmCurrentStage = nil
+		if rangerAutofarmStatusLabel and rangerAutofarmStatusLabel.SetDesc then
+			rangerAutofarmStatusLabel:SetDesc("Simulated end of cycle")
+		end
+		Fluent:Notify({ Title = "Ranger Autofarm", Content = "All stages marked complete. Win current stage to test restart.", Duration = 4 })
 	end })
 end
 

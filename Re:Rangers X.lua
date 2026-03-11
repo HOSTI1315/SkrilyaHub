@@ -1,4 +1,4 @@
-print("vChernaEdit23")
+print("vChernaEdit")
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11,10 +11,22 @@ local httprequest = (syn and syn.request) or (http and http.request) or http_req
 
 local LocalPlayer = Players.LocalPlayer
 
--- Ждём загрузки игры (как Infinite Yield)
-if not game:IsLoaded() then
-	game.Loaded:Wait()
+-- Ждём загрузки игры
+repeat task.wait(0.1) until game:IsLoaded()
+task.wait(1)
+local lpWait = 0
+while not LocalPlayer and lpWait < 100 do
+	task.wait(0.1)
+	LocalPlayer = Players.LocalPlayer
+	lpWait = lpWait + 1
 end
+pcall(function()
+	LocalPlayer:WaitForChild("PlayerGui", 30)
+end)
+pcall(function()
+	ReplicatedStorage:WaitForChild("Remote", 15)
+end)
+task.wait(0.5)
 
 -- Автоперезапуск при телепорте в другое лобби: подставь сырую ссылку на этот скрипт (raw GitHub/Pastebin и т.д.)
 local SCRIPT_RELOAD_URL = "https://raw.githubusercontent.com/HOSTI1315/SkrilyaHub/refs/heads/main/Re%3ARangers%20X.lua"
@@ -210,7 +222,6 @@ end
 
 -- In lobby = no Yen on LocalPlayer; in game = LocalPlayer.Yen exists
 local function isInLobby()
-	if not LocalPlayer then return true end
 	return not LocalPlayer:FindFirstChild("Yen")
 end
 
@@ -1505,7 +1516,10 @@ local function applyConfigState()
 end
 
 SaveManager:LoadAutoloadConfig()
-task.spawn(function() task.wait(0.3) applyConfigState() end)
+task.spawn(function()
+	task.wait(1.5)
+	applyConfigState()
+end)
 
 Fluent:Notify({ Title = "SkrilyaHub", Content = "Loaded. Auto / INF Traits / Shop / Webhook / Misc / Settings.", Duration = 4 })
 

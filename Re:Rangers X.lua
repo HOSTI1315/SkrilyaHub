@@ -1,4 +1,4 @@
-print("v2")
+print("v3FankBich")
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -346,6 +346,28 @@ function Game.BuildRangerDisplayKey(world, chapterNum)
 	return display .. " - Ranger Stage " .. roman
 end
 
+-- Fallback: read world/chapter from ReplicatedStorage.Values.Game (when HUD is hidden, e.g. rewards screen)
+function Game.GetCurrentRangerStageFromValues()
+	local values = RS:FindFirstChild("Values")
+	local gameFolder = values and values:FindFirstChild("Game")
+	if not gameFolder then return nil end
+	local gamemode = gameFolder:FindFirstChild("Gamemode")
+	local worldVal = gameFolder:FindFirstChild("World")
+	local levelVal = gameFolder:FindFirstChild("Level")
+	if not gamemode or not worldVal or not levelVal or not gamemode:IsA("StringValue") then return nil end
+	local modeText = (gamemode.Value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+	if modeText ~= "Ranger Stage" then return nil end
+	local world = (worldVal.Value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+	local level = (levelVal.Value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+	local chNum = level:match("_RangerStage(%d+)$")
+	chNum = chNum and tonumber(chNum)
+	if not world or not chNum then return nil end
+	if not table.find(RANGER_WORLDS, world) then return nil end
+	local displayKey = Game.BuildRangerDisplayKey(world, chNum)
+	if not displayKey then return nil end
+	return { world = world, chapterNum = chNum, displayKey = displayKey }
+end
+
 local function getRangerChapterCount(world)
 	return (world == "JJK") and 4 or 3
 end
@@ -390,16 +412,11 @@ local rangerAutofarmCurrentStage = nil
 local rangerAutofarmRewardsGuard = nil
 local rangerAutofarmLoop = nil
 
-local function setupRangerRewardsHook()
+local function connectRangerRewardsCallback(rewardsUI)
 	if rangerAutofarmRewardsGuard then
 		rangerAutofarmRewardsGuard:Disconnect()
 		rangerAutofarmRewardsGuard = nil
 	end
-	if not rangerAutofarmEnabled then return end
-	local gui = LocalPlayer:FindFirstChild("PlayerGui")
-	if not gui then return end
-	local rewardsUI = gui:FindFirstChild("RewardsUI") or gui:FindFirstChild("ResultUI")
-	if not rewardsUI then return end
 	rangerAutofarmRewardsGuard = rewardsUI:GetPropertyChangedSignal("Enabled"):Connect(function()
 		if not rewardsUI.Enabled or not rangerAutofarmEnabled then return end
 		task.defer(function()
@@ -428,6 +445,12 @@ local function setupRangerRewardsHook()
 				world = rangerAutofarmCurrentStage.world
 				ch = rangerAutofarmCurrentStage.chapterNum
 				displayKey = Game.BuildRangerDisplayKey(world, ch)
+			else
+				stage = Game.GetCurrentRangerStageFromValues()
+				if stage and stage.displayKey then
+					displayKey = stage.displayKey
+					world, ch = stage.world, stage.chapterNum
+				end
 			end
 			if displayKey and world and ch then
 				RangerProgressConfig.SetCompleted(displayKey, 1)
@@ -460,6 +483,27 @@ local function setupRangerRewardsHook()
 			end
 		end)
 	end)
+end
+
+local function setupRangerRewardsHook()
+	if rangerAutofarmRewardsGuard then
+		rangerAutofarmRewardsGuard:Disconnect()
+		rangerAutofarmRewardsGuard = nil
+	end
+	if not rangerAutofarmEnabled then return end
+	local gui = LocalPlayer:FindFirstChild("PlayerGui")
+	if not gui then return end
+	local rewardsUI = gui:FindFirstChild("RewardsUI") or gui:FindFirstChild("ResultUI")
+	if rewardsUI then
+		connectRangerRewardsCallback(rewardsUI)
+	else
+		task.spawn(function()
+			rewardsUI = gui:WaitForChild("RewardsUI", 15) or gui:WaitForChild("ResultUI", 5)
+			if rewardsUI and rangerAutofarmEnabled and not rangerAutofarmRewardsGuard then
+				connectRangerRewardsCallback(rewardsUI)
+			end
+		end)
+	end
 end
 
 -- Auto Join state

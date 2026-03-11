@@ -1,36 +1,3 @@
---[[
-  SkrilyaHub (Re:Rangers X) — 1 Lua file for injector.
-  Uses FluentPlus + SaveManager + InterfaceManager.
-  No game require() — only game, WaitForChild, FireServer.
-
-  Examples:
-    -- Modes + Start
-    Game.EnterMode("Fate Mode", true)
-    Game.EnterMode("AdventureMode", true)
-    Game.EnterDungeon({ Difficulty = "Normal" })
-    task.wait(0.6) Game.StartGame()
-
-    -- Speed, room, lobby
-    Game.SetSpeed(2)
-    -- Состояние по дампу: Game.GetGameSpeed() → 1|2|3, Game.HasSpeedGamepass3x() → bool, Game.IsAutoPlayEnabled() → bool
-    Game.SetRoomMode("Story") Game.SetRoomWorld("Namek") Game.SetRoomChapter("Chapter 1") Game.SetRoomDifficulty("Normal")
-    Game.SetAutoJoin(true, { mode = "Story", world = "Namek", difficulty = "Normal" })
-    Game.PortalStart() Game.ClaimDailyReward(1) Game.RedeemCode("CODE") Game.ClaimBattlepassAll()
-
-    -- Match settings
-    Game.SetAutoRetry(true) Game.SetAutoNext(true) Game.SetAutoLeave(true) Game.SetAutoVoteStart(true) Game.SetAutoSetMaxSpeed(true)
-    Game.VotePlaying() Game.VoteRetry() Game.VoteNext() Game.RestartMatch() Game.ToggleAutoPlay()
-
-    -- Units (Equip/UnEquip и т.д. из скрипта обходят клиентскую проверку "exit mode first")
-    local units = Game.GetUnitsList(game.Players.LocalPlayer)
-    Game.EquipBest() Game.DeployUnit(units[1], true) Game.FeedUnit(units[1], { ["ItemName"] = 5 })
-    -- Открытие UI по дампу: Game.TryOpenMerchant() Game.TryOpenBattlePass() Game.OpenTraitsUI(unitFolder) Game.OpenCollection("Traits")
-
-    -- Merchant / Summon / Webhook / Free Gamepass
-    Game.BuyMerchantItem("ItemName", 10)
-    Game.SelectBanner("UnitName") Game.Summon("10x", "Standard", {})
-    Game.SetWebhook(true, "https://discord.com/api/webhooks/...") Game.SendWebhookMessage("Test")
-]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")

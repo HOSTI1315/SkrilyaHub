@@ -486,6 +486,7 @@ local function setupRangerRewardsHook()
 		rangerAutofarmRewardsGuard = nil
 	end
 	if not rangerAutofarmEnabled then return end
+	if not LocalPlayer then return end
 	local gui = LocalPlayer:FindFirstChild("PlayerGui")
 	if not gui then return end
 	local rewardsUI = gui:FindFirstChild("RewardsUI") or gui:FindFirstChild("ResultUI")
@@ -1509,12 +1510,14 @@ Fluent:Notify({ Title = "SkrilyaHub", Content = "Loaded. Auto / INF Traits / Sho
 
 -- Автоперезапуск при телепорте (как Infinite Yield): в новом лобби скрипт подгрузится сам
 local teleportQueued = false
-LocalPlayer.OnTeleport:Connect(function(_state)
-	if teleportQueued then return end
-	if type(queueteleport) ~= "function" or not SCRIPT_RELOAD_URL or #SCRIPT_RELOAD_URL < 10 then return end
-	teleportQueued = true
-	queueteleport("loadstring(game:HttpGet('" .. SCRIPT_RELOAD_URL:gsub("\\", "\\\\"):gsub("'", "\\'") .. "'))()")
-end)
+if LocalPlayer and LocalPlayer.OnTeleport then
+	LocalPlayer.OnTeleport:Connect(function(_state)
+		if teleportQueued then return end
+		if type(queueteleport) ~= "function" or not SCRIPT_RELOAD_URL or #SCRIPT_RELOAD_URL < 10 then return end
+		teleportQueued = true
+		queueteleport("loadstring(game:HttpGet('" .. SCRIPT_RELOAD_URL:gsub("\\", "\\\\"):gsub("'", "\\'") .. "'))()")
+	end)
+end
 
 -- Export for UI
 _G.SkrilyaHub = Game

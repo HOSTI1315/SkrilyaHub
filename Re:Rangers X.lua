@@ -1,4 +1,10 @@
-print("vChernaEdit1")
+local g = getgenv and getgenv() or _G
+if g.SkrilyaHubLoaded then
+	return
+end
+g.SkrilyaHubLoaded = true
+
+print("vFanMirkaEbalSobakv3.23.FarmRelic")
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -45,6 +51,462 @@ local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.
 
 -- ============ REMOTES CACHE ============
 local RS = ReplicatedStorage
+
+-- ============ SHARED GAME DATA (CRAFTING / LEVELS / ITEMS) ============
+local Shared = RS:FindFirstChild("Shared")
+local CraftingRecipes, GameWorldLevels, ItemsInfo, GetData = nil, nil, nil, nil
+
+-- Прямой доступ к Player_Data без зависимости от Game (во избежание конфликта с глобальным DataModel Game)
+local function getPlayerDataRaw()
+	local pdRoot = RS:FindFirstChild("Player_Data")
+	if not pdRoot or not LocalPlayer then return nil end
+	return pdRoot:FindFirstChild(LocalPlayer.Name)
+end
+
+pcall(function()
+	if not Shared then return end
+	local Info = Shared:WaitForChild("Info", 10)
+	if not Info then return end
+
+	-- Те же пути, что использует UI крафта: см. ReplicatedStorage.UIS.Crafting.Crafting
+	CraftingRecipes = require(Info:WaitForChild("CraftingRecipes"))
+	ItemsInfo = require(Info:WaitForChild("Items"))
+
+	local GameWorld = Info:WaitForChild("GameWorld")
+	GameWorldLevels = require(GameWorld:WaitForChild("Levels"))
+
+	-- Модуль-агрегатор методов GetItemStats/GetUnitStats и т.п.
+	GetData = require(Shared:WaitForChild("GetData"))
+end)
+
+-- ============ EVO + GEARS FARM STATE ============
+local EvoFarm = {
+	CraftingRecipes = CraftingRecipes,
+	Levels = GameWorldLevels,
+	GetData = GetData,
+	ItemsInfo = ItemsInfo,
+	Targets = {
+		EvoItems = {},
+		Gears = {},
+	},
+	Config = nil, -- будет заполнен при загрузке/сохранении
+	GlobalNeed = {}, -- суммарная потребность по материалам для всех целей (на 1 крафт каждой)
+	NeedCount = {},  -- текущая глобальная нехватка (globalLacking) = max(0, GlobalNeed - have)
+	DropIndex = {},
+	StageRoute = {},
+	CurrentStageIndex = 1,
+	StagesState = {}, -- строковый ключ стадии -> 0/1
+	MatchCounter = 0, -- счётчик матчей для периодического пересчёта маршрута
+	StatusLabel = nil, -- параграф статуса в UI
+}
+
+-- Списки крафтовых целей (эво-материалы и гиры) по ItemsInfo
+local function buildEvoFarmTargets()
+	local evoItems, gears = {}, {}
+	if not ItemsInfo or type(ItemsInfo) ~= "table" then
+		return { EvoItems = evoItems, Gears = gears }
+	end
+
+	for name, data in pairs(ItemsInfo) do
+		if type(data) == "table" then
+			if data.Iscraft and data.Type == "Material" then
+				table.insert(evoItems, name)
+			elseif data.Iscraft and data.Type == "Gear" then
+				table.insert(gears, name)
+			end
+		end
+	end
+
+	table.sort(evoItems)
+	table.sort(gears)
+
+	return {
+		EvoItems = evoItems,
+		Gears = gears,
+	}
+end
+
+pcall(function()
+	EvoFarm.Targets = buildEvoFarmTargets()
+end)
+
+-- ============ EVO FARM CONFIG (файл) ============
+local EVO_FARM_FILE = "SkrilyaHub_Config/SkrilyaHub_EvoFarm.json"
+
+local function loadEvoFarmConfig()
+	-- отдельный FileIO, чтобы не зависеть от порядка объявления getFileIO ниже
+	local g = getgenv and getgenv() or _G
+	local rf = (g.syn and g.syn.readfile) or (g.readfile) or readfile
+	local iof = (g.syn and g.syn.isfile) or (g.isfile) or isfile
+	if type(rf) ~= "function" or type(iof) ~= "function" then
+		return { targets = {}, stages = {} }
+	end
+	if not iof(EVO_FARM_FILE) then
+		return { targets = {}, stages = {} }
+	end
+	local ok, data = pcall(function()
+		local raw = rf(EVO_FARM_FILE)
+		if not raw or #raw == 0 then return {} end
+		return HttpService:JSONDecode(raw)
+	end)
+	data = (ok and data and type(data) == "table") and data or {}
+	if type(data.targets) ~= "table" then data.targets = {} end
+	if type(data.stages) ~= "table" then data.stages = {} end
+	return data
+end
+
+local function saveEvoFarmConfig(cfg)
+	local g = getgenv and getgenv() or _G
+	local wf = (g.syn and g.syn.writefile) or (g.writefile) or writefile
+	local iof = (g.syn and g.syn.isfile) or (g.isfile) or isfile
+	local mkdir = (g.syn and g.syn.makefolder) or (g.makefolder) or makefolder
+	local isdir = (g.syn and g.syn.isfolder) or (g.isfolder) or isfolder
+	if type(wf) ~= "function" then return false end
+	pcall(function()
+		local dir = EVO_FARM_FILE:match("^(.+)/[^/]+$")
+		if dir and type(mkdir) == "function" and type(isdir) == "function" and not isdir(dir) then
+			mkdir(dir)
+		end
+		wf(EVO_FARM_FILE, HttpService:JSONEncode(cfg or {}))
+	end)
+	return true
+end
+
+EvoFarm.Config = loadEvoFarmConfig()
+EvoFarm.StagesState = EvoFarm.Config.stages or {}
+
+local function updateEvoFarmStatus()
+	local label = EvoFarm.StatusLabel
+	if not (label and label.SetDesc) then
+		return
+	end
+
+	local totalNeed, totalLacking = 0, 0
+	for matName, needTotal in pairs(EvoFarm.GlobalNeed or {}) do
+		if type(needTotal) == "number" and needTotal > 0 then
+			totalNeed += needTotal
+			local missing = 0
+			if EvoFarm.NeedCount and type(EvoFarm.NeedCount[matName]) == "number" then
+				missing = math.max(0, EvoFarm.NeedCount[matName])
+			else
+				missing = needTotal
+			end
+			totalLacking += missing
+		end
+	end
+
+	local desc
+	if totalNeed <= 0 then
+		desc = "Idle"
+	else
+		local farmed = math.max(0, totalNeed - totalLacking)
+		if farmed > totalNeed then farmed = totalNeed end
+		-- Список конкретных материалов, которые сейчас фармятся
+		local currentNames = {}
+		local step = EvoFarm.StageRoute and EvoFarm.StageRoute[EvoFarm.CurrentStageIndex]
+
+		local function pushMat(matName)
+			if #currentNames >= 3 then return end
+			local missing = EvoFarm.NeedCount and EvoFarm.NeedCount[matName]
+			if not (missing and missing > 0) then return end
+			local meta = getItemMeta and getItemMeta(matName) or nil
+			local display = (meta and meta.DisplayName) or matName
+			table.insert(currentNames, string.format("%s (%d)", tostring(display), missing))
+		end
+
+		if step and step.materials then
+			for matName in pairs(step.materials) do
+				pushMat(matName)
+				if #currentNames >= 3 then break end
+			end
+		end
+
+		-- Если по текущей карте нет активных материалов, показываем любые нужные
+		if #currentNames == 0 then
+			for matName, missing in pairs(EvoFarm.NeedCount or {}) do
+				if missing and missing > 0 then
+					pushMat(matName)
+					if #currentNames >= 3 then break end
+				end
+			end
+		end
+
+		local nowPart = (#currentNames > 0) and (" | Now: " .. table.concat(currentNames, ", ")) or ""
+		desc = string.format("Farm %d / %d items%s", farmed, totalNeed, nowPart)
+	end
+
+	label:SetDesc(desc)
+end
+
+-- ============ RECIPE RESOLVER ============
+local function accumulateRequirements(targetName, multiplier, needCount, visited)
+	if not CraftingRecipes or not targetName then return end
+	visited = visited or {}
+
+	-- защита от циклов
+	if visited[targetName] then
+		return
+	end
+	visited[targetName] = true
+
+	local recipe = CraftingRecipes[targetName]
+	if recipe and type(recipe.Requirement) == "table" then
+		for ingName, ingCount in pairs(recipe.Requirement) do
+			if type(ingName) == "string" and type(ingCount) == "number" and ingCount > 0 then
+				accumulateRequirements(ingName, ingCount * multiplier, needCount, visited)
+			end
+		end
+	else
+		-- базовый материал
+		local current = needCount[targetName] or 0
+		needCount[targetName] = current + multiplier
+	end
+
+	visited[targetName] = nil
+end
+
+-- targetsConfig: { [targetName] = wantedCount }, возвращает базовую суммарную потребность по материалам
+local function resolveTargetsToNeedCount(targetsConfig)
+	local needCount = {}
+	if not targetsConfig or type(targetsConfig) ~= "table" then
+		return needCount
+	end
+
+	for name, wanted in pairs(targetsConfig) do
+		if type(name) == "string" and type(wanted) == "number" and wanted > 0 then
+			accumulateRequirements(name, wanted, needCount, {})
+		end
+	end
+
+	return needCount
+end
+
+-- ============ DROP INDEX BUILDER ============
+local function buildDropIndex()
+	local index = {}
+	if not GameWorldLevels or type(GameWorldLevels) ~= "table" then
+		return index
+	end
+
+	for worldKey, levels in pairs(GameWorldLevels) do
+		if type(levels) == "table" then
+			for levelKey, levelData in pairs(levels) do
+				if type(levelData) == "table" and type(levelData.Items) == "table" then
+					local waveName = levelData.Wave or levelKey
+					local modeHint = "Story"
+					if tostring(levelKey):find("_RangerStage") or tostring(waveName):find("_RangerStage") then
+						modeHint = "Ranger Stage"
+					elseif tostring(levelKey):find("Raid") or tostring(waveName):find("Raid") then
+						modeHint = "Raids Stage"
+					end
+					for _, drop in ipairs(levelData.Items) do
+						if type(drop) == "table" and type(drop.Name) == "string" then
+							local list = index[drop.Name]
+							if not list then
+								list = {}
+								index[drop.Name] = list
+							end
+							table.insert(list, {
+								world = worldKey,
+								levelKey = levelKey,
+								levelName = levelData.Name or levelKey,
+								modeHint = modeHint,
+								dropRate = drop.DropRate or 0,
+								min = drop.MinDrop or 0,
+								max = drop.MaxDrop or 0,
+								layoutOrder = levelData.LayoutOrder or 0,
+							})
+						end
+					end
+				end
+			end
+		end
+	end
+
+	return index
+end
+
+-- ============ STAGE ROUTE BUILDER ============
+local function getItemMeta(name)
+	if not ItemsInfo or type(ItemsInfo) ~= "table" then return nil end
+	return ItemsInfo[name]
+end
+
+local function hasChallengeObtain(meta)
+	if not meta or type(meta.ObtainFrom) ~= "table" then return false end
+	for _, src in ipairs(meta.ObtainFrom) do
+		if src == "Challenge" then
+			return true
+		end
+	end
+	return false
+end
+
+local function isMaterialAutoFarmable(matName, dropIndex)
+	dropIndex = dropIndex or EvoFarm.DropIndex
+	if not dropIndex then return false end
+	local drops = dropIndex[matName]
+	if not drops or #drops == 0 then
+		return false
+	end
+	local meta = getItemMeta(matName)
+	if hasChallengeObtain(meta) then
+		-- Challenge-ресурсы игрок фармит сам
+		return false
+	end
+	return true
+end
+
+local function buildStageRoute(needCount, dropIndex)
+	local stageMaterials = {} -- stageKey -> { world, levelKey, mode, layoutOrder, materials = {}, expectedBase = 0 }
+
+	for itemName, missing in pairs(needCount) do
+		if missing > 0 then
+			if not isMaterialAutoFarmable(itemName, dropIndex) then
+				-- пропускаем неподдерживаемые материалы (Challenge/без дропа)
+				continue
+			end
+			local drops = dropIndex[itemName]
+			if drops and #drops > 0 then
+				for _, info in ipairs(drops) do
+					local stageKey = tostring(info.world) .. "|" .. tostring(info.levelKey)
+					local entry = stageMaterials[stageKey]
+					if not entry then
+						entry = {
+							world = info.world,
+							levelKey = info.levelKey,
+							mode = info.modeHint,
+							layoutOrder = info.layoutOrder or 0,
+							materials = {},
+							expectedBase = 0,
+						}
+						stageMaterials[stageKey] = entry
+					end
+					entry.materials[itemName] = true
+					local expected = (info.dropRate or 0) * (((info.min or 0) + (info.max or 0)) / 2)
+					entry.expectedBase = (entry.expectedBase or 0) + expected
+				end
+			end
+		end
+	end
+
+	local route = {}
+	for _, entry in pairs(stageMaterials) do
+		local matsCount = 0
+		for _ in pairs(entry.materials) do
+			matsCount += 1
+		end
+		local score = (entry.expectedBase or 0) + matsCount * 10
+		table.insert(route, {
+			mode = entry.mode,
+			world = entry.world,
+			chapter = entry.levelKey,
+			layoutOrder = entry.layoutOrder,
+			key = tostring(entry.mode) .. "_" .. tostring(entry.world) .. "_" .. tostring(entry.levelKey),
+			materials = entry.materials,
+			score = score,
+		})
+	end
+
+	table.sort(route, function(a, b)
+		if (a.score or 0) ~= (b.score or 0) then
+			return (a.score or 0) > (b.score or 0)
+		end
+		if a.mode ~= b.mode then
+			return tostring(a.mode) < tostring(b.mode)
+		end
+		if a.world ~= b.world then
+			return tostring(a.world) < tostring(b.world)
+		end
+		return (a.layoutOrder or 0) < (b.layoutOrder or 0)
+	end)
+
+	return route
+end
+
+-- Обновить NeedCount, DropIndex и StageRoute по текущим целям конфига
+local function rebuildEvoFarmFromConfig()
+	if not EvoFarm.Config then
+		EvoFarm.Config = { targets = {}, stages = {} }
+	end
+	local targets = EvoFarm.Config.targets or {}
+	-- базовая суммарная потребность по материалам (с учётом вложенных рецептов)
+	local baseNeed = resolveTargetsToNeedCount(targets)
+
+	if not EvoFarm.DropIndex or next(EvoFarm.DropIndex) == nil then
+		EvoFarm.DropIndex = buildDropIndex()
+	end
+
+	-- отфильтровать только автофармовые материалы (есть дроп, нет Challenge)
+	local globalNeed = {}
+	for matName, count in pairs(baseNeed) do
+		if type(matName) == "string" and type(count) == "number" and count > 0 then
+			if isMaterialAutoFarmable(matName, EvoFarm.DropIndex) then
+				globalNeed[matName] = count
+			end
+		end
+	end
+	EvoFarm.GlobalNeed = globalNeed
+
+	-- первоначальная глобальная нехватка (NeedCount) по инвентарю
+	local function initialRecalc()
+		local needCount = {}
+		local pd = getPlayerDataRaw()
+		if pd then
+			local itemsFolder = pd:FindFirstChild("Items")
+			if itemsFolder then
+				for matName, needTotal in pairs(EvoFarm.GlobalNeed or {}) do
+					local have = 0
+					local item = itemsFolder:FindFirstChild(matName)
+					if item and item:FindFirstChild("Amount") and item.Amount:IsA("ValueBase") then
+						have = tonumber(item.Amount.Value) or 0
+					end
+					local lacking = math.max(0, (needTotal or 0) - have)
+					needCount[matName] = lacking
+				end
+			end
+		end
+		-- если по каким-то причинам данные игрока недоступны, считаем, что не хватает всего GlobalNeed
+		if not next(needCount) then
+			for matName, needTotal in pairs(EvoFarm.GlobalNeed or {}) do
+				if type(needTotal) == "number" and needTotal > 0 then
+					needCount[matName] = needTotal
+				end
+			end
+		end
+		EvoFarm.NeedCount = needCount
+	end
+
+	initialRecalc()
+
+	-- построить маршрут по текущему globalLacking
+	EvoFarm.StageRoute = buildStageRoute(EvoFarm.NeedCount or {}, EvoFarm.DropIndex)
+	EvoFarm.CurrentStageIndex = 1
+
+	-- Инициализировать состояния стадий (0) для нового маршрута
+	local stagesState = EvoFarm.Config.stages or {}
+	for _, step in ipairs(EvoFarm.StageRoute) do
+		if step.key then
+			if stagesState[step.key] ~= 0 and stagesState[step.key] ~= 1 then
+				stagesState[step.key] = 0
+			end
+		end
+	end
+	EvoFarm.Config.stages = stagesState
+	EvoFarm.StagesState = stagesState
+	saveEvoFarmConfig(EvoFarm.Config)
+	updateEvoFarmStatus()
+end
+
+-- Выбор целей из UI: selectedTargets = { [name] = wantedCount }
+local function setEvoFarmTargets(selectedTargets)
+	EvoFarm.Config = EvoFarm.Config or { targets = {}, stages = {} }
+	EvoFarm.Config.targets = selectedTargets or {}
+	-- при смене целей сбрасываем прогресс стадий
+	EvoFarm.Config.stages = {}
+	rebuildEvoFarmFromConfig()
+end
+
 local function wfc(parent, name, timeout)
 	return parent:WaitForChild(name, timeout or 10)
 end
@@ -424,6 +886,282 @@ local rangerAutofarmCurrentStage = nil
 local rangerAutofarmRewardsGuard = nil
 local rangerAutofarmLoop = nil
 
+-- ============ EVO FARM AUTOFARM STATE ============
+local evoAutofarmEnabled = false
+local evoAutofarmRewardsGuard = nil
+
+local function getCurrentStageForEvo()
+	local values = RS:FindFirstChild("Values")
+	local gameFolder = values and values:FindFirstChild("Game")
+	if not gameFolder then return nil end
+	local worldVal = gameFolder:FindFirstChild("World")
+	local levelVal = gameFolder:FindFirstChild("Level")
+	if not worldVal or not levelVal then return nil end
+	local world = tostring(worldVal.Value or "")
+	local level = tostring(levelVal.Value or "")
+	return {
+		world = world,
+		levelKey = level,
+	}
+end
+
+local function recalcNeedCountFromInventory()
+	if not EvoFarm.GlobalNeed or not next(EvoFarm.GlobalNeed) then
+		return
+	end
+	local pd = getPlayerDataRaw()
+	if not pd then return end
+	local itemsFolder = pd:FindFirstChild("Items")
+	if not itemsFolder then return end
+
+	local needCount = {}
+	for matName, needTotal in pairs(EvoFarm.GlobalNeed or {}) do
+		if needTotal > 0 then
+			local have = 0
+			local item = itemsFolder:FindFirstChild(matName)
+			if item and item:FindFirstChild("Amount") and item.Amount:IsA("ValueBase") then
+				have = tonumber(item.Amount.Value) or 0
+			end
+			local newNeed = math.max(0, (needTotal or 0) - have)
+			needCount[matName] = newNeed
+		end
+	end
+	EvoFarm.NeedCount = needCount
+	updateEvoFarmStatus()
+end
+
+local function getDropsForStage(world, levelKey)
+	if not EvoFarm.Levels or type(EvoFarm.Levels) ~= "table" then return {} end
+	local levels = EvoFarm.Levels[world]
+	if not levels then return {} end
+	local levelData = levels[levelKey]
+	if not levelData or type(levelData.Items) ~= "table" then return {} end
+	return levelData.Items
+end
+
+local function isStageStillUsefulForEvo(world, levelKey)
+	if not EvoFarm.NeedCount or not next(EvoFarm.NeedCount) then
+		return false
+	end
+	for _, drop in ipairs(getDropsForStage(world, levelKey)) do
+		if type(drop) == "table" and type(drop.Name) == "string" then
+			if EvoFarm.NeedCount[drop.Name] and EvoFarm.NeedCount[drop.Name] > 0 then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+local function getStageKeyFromStep(step)
+	if not step or not step.mode then return nil end
+	return tostring(step.mode) .. "_" .. tostring(step.world) .. "_" .. tostring(step.chapter)
+end
+
+local function isEvoStageCycleComplete()
+	for _, step in ipairs(EvoFarm.StageRoute or {}) do
+		local key = getStageKeyFromStep(step)
+		if key then
+			local v = EvoFarm.StagesState[key]
+			if v ~= 1 then
+				return false
+			end
+		end
+	end
+	return true
+end
+
+local function resetEvoStagesState()
+	for _, step in ipairs(EvoFarm.StageRoute or {}) do
+		local key = getStageKeyFromStep(step)
+		if key then
+			EvoFarm.StagesState[key] = 0
+		end
+	end
+	if EvoFarm.Config then
+		EvoFarm.Config.stages = EvoFarm.StagesState
+		saveEvoFarmConfig(EvoFarm.Config)
+	end
+end
+
+local function enterEvoStage(step)
+	if not step then return end
+	-- Ranger Stage или Story/другие режимы через PlayRoom
+	if step.mode == "Ranger Stage" and step.world and step.chapter then
+		-- есть специализированная функция
+		local chNum = tonumber(tostring(step.chapter):match("_RangerStage(%d+)$")) or 1
+		Game.EnterRangerStage(step.world, chNum)
+		return
+	end
+
+	-- универсальный вход через создание комнаты
+	Game.CreateRoom()
+	task.wait(0.5)
+	Game.SetRoomMode(step.mode or "Story")
+	if step.world then
+		Game.SetRoomWorld(step.world)
+	end
+	if step.chapter then
+		Game.SetRoomChapter(step.chapter)
+	end
+	task.wait(0.3)
+	Game.SubmitRoom()
+	task.wait(0.2)
+	Game.StartGame()
+end
+
+local function connectEvoRewardsCallback(rewardsUI)
+	if evoAutofarmRewardsGuard then
+		evoAutofarmRewardsGuard:Disconnect()
+		evoAutofarmRewardsGuard = nil
+	end
+	evoAutofarmRewardsGuard = rewardsUI:GetPropertyChangedSignal("Enabled"):Connect(function()
+		if not rewardsUI.Enabled or not evoAutofarmEnabled then return end
+		task.defer(function()
+			task.wait(0.1)
+			if not evoAutofarmEnabled then return end
+
+			local isWon = false
+			local isDefeat = false
+			pcall(function()
+				local main = rewardsUI:FindFirstChild("Main")
+				local left = main and main:FindFirstChild("LeftSide")
+				local gs = left and left:FindFirstChild("GameStatus")
+				local raw = (gs and gs:IsA("TextLabel")) and (gs.Text or "") or ""
+				if raw:lower():find("won") or raw:find("WON") then isWon = true end
+				if raw:lower():find("defeat") or raw:find("DEFEAT") or raw:lower():find("game over") then isDefeat = true end
+			end)
+			if isDefeat then return end
+
+			recalcNeedCountFromInventory()
+
+			-- периодически пересобираем маршрут с учётом актуального globalLacking
+			EvoFarm.MatchCounter = (EvoFarm.MatchCounter or 0) + 1
+			if EvoFarm.MatchCounter % 4 == 0 then
+				if not EvoFarm.DropIndex or next(EvoFarm.DropIndex) == nil then
+					EvoFarm.DropIndex = buildDropIndex()
+				end
+				EvoFarm.StageRoute = buildStageRoute(EvoFarm.NeedCount or {}, EvoFarm.DropIndex)
+				if EvoFarm.CurrentStageIndex > #EvoFarm.StageRoute then
+					EvoFarm.CurrentStageIndex = 1
+				end
+			end
+
+			local step = EvoFarm.StageRoute[EvoFarm.CurrentStageIndex]
+			if not step then
+				evoAutofarmEnabled = false
+				return
+			end
+			local stageKey = getStageKeyFromStep(step)
+
+			local useful = false
+			if step.world and step.chapter then
+				useful = isStageStillUsefulForEvo(step.world, step.chapter)
+			end
+
+			if useful then
+				-- остаёмся на карте
+				Game.VoteRetry()
+				return
+			end
+
+			-- помечаем стадию как завершённую в этом круге
+			if stageKey then
+				EvoFarm.StagesState[stageKey] = 1
+				if EvoFarm.Config then
+					EvoFarm.Config.stages = EvoFarm.StagesState
+					saveEvoFarmConfig(EvoFarm.Config)
+				end
+			end
+
+			-- если все цели закрыты по NeedCount, можно выключать
+			local allDone = true
+			for _, need in pairs(EvoFarm.NeedCount or {}) do
+				if need > 0 then
+					allDone = false
+					break
+				end
+			end
+			if allDone then
+				evoAutofarmEnabled = false
+				return
+			end
+
+			-- если круг по стадиям завершён, сбрасываем его
+			if isEvoStageCycleComplete() then
+				resetEvoStagesState()
+			end
+
+			-- двигаемся к следующему шагу маршрута
+			EvoFarm.CurrentStageIndex = EvoFarm.CurrentStageIndex + 1
+			if EvoFarm.CurrentStageIndex > #EvoFarm.StageRoute then
+				EvoFarm.CurrentStageIndex = 1
+			end
+
+			Game.LeaveRoom()
+			task.spawn(function()
+				task.wait(1)
+				if not evoAutofarmEnabled then return end
+				enterEvoStage(EvoFarm.StageRoute[EvoFarm.CurrentStageIndex])
+			end)
+		end)
+	end)
+end
+
+local function setupEvoRewardsHook()
+	if evoAutofarmRewardsGuard then
+		evoAutofarmRewardsGuard:Disconnect()
+		evoAutofarmRewardsGuard = nil
+	end
+	if not evoAutofarmEnabled then return end
+	if not LocalPlayer then return end
+	local gui = LocalPlayer:FindFirstChild("PlayerGui")
+	if not gui then return end
+	local rewardsUI = gui:FindFirstChild("RewardsUI") or gui:FindFirstChild("ResultUI")
+	if rewardsUI then
+		connectEvoRewardsCallback(rewardsUI)
+	else
+		task.spawn(function()
+			rewardsUI = gui:WaitForChild("RewardsUI", 15) or gui:WaitForChild("ResultUI", 5)
+			if rewardsUI and evoAutofarmEnabled and not evoAutofarmRewardsGuard then
+				connectEvoRewardsCallback(rewardsUI)
+			end
+		end)
+	end
+end
+
+local function setEvoAutofarmEnabled(enabled)
+	evoAutofarmEnabled = enabled == true
+	if not evoAutofarmEnabled then
+		if evoAutofarmRewardsGuard then
+			evoAutofarmRewardsGuard:Disconnect()
+			evoAutofarmRewardsGuard = nil
+		end
+		return
+	end
+
+	-- если маршрута ещё нет, пытаемся собрать его из конфига
+	if (not EvoFarm.StageRoute) or (#EvoFarm.StageRoute == 0) then
+		rebuildEvoFarmFromConfig()
+	end
+	if #EvoFarm.StageRoute == 0 then
+		evoAutofarmEnabled = false
+		return
+	end
+
+	setupEvoRewardsHook()
+
+	-- старт с первой стадии маршрута, только из лобби
+	task.spawn(function()
+		while evoAutofarmEnabled and not isInLobby() do
+			task.wait(2)
+		end
+		if not evoAutofarmEnabled then return end
+		EvoFarm.CurrentStageIndex = 1
+		enterEvoStage(EvoFarm.StageRoute[EvoFarm.CurrentStageIndex])
+	end)
+end
+
 local function connectRangerRewardsCallback(rewardsUI)
 	if rangerAutofarmRewardsGuard then
 		rangerAutofarmRewardsGuard:Disconnect()
@@ -539,11 +1277,6 @@ function Game.SetAutoJoin(enabled, filter)
 			local mode = autoJoinFilter.mode
 			if mode == "Fate" then
 				Game.EnterMode("Fate Mode", true)
-				task.wait(5)
-			elseif mode == "Dungeon" then
-				Game.EnterDungeon({ Difficulty = autoJoinFilter.difficulty or "Normal" })
-				task.wait(0.6)
-				Game.StartGame()
 				task.wait(5)
 			else
 				local list = Game.GetRoomList()
@@ -1010,8 +1743,7 @@ end
 
 local Tabs = {
 	Auto = Window:AddTab({ Title = "Auto", Icon = "play" }),
-	Traits = Window:AddTab({ Title = "INF Traits", Icon = "monitor" }),
-	Shop = Window:AddTab({ Title = "Shop", Icon = "shopping-cart" }),
+Shop = Window:AddTab({ Title = "Shop", Icon = "shopping-cart" }),
 	Webhook = Window:AddTab({ Title = "Webhook", Icon = "mail" }),
 	Misc = Window:AddTab({ Title = "Misc", Icon = "users" }),
 	Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
@@ -1020,7 +1752,7 @@ local Tabs = {
 local Options = Fluent.Options
 
 -- ---- Constants ----
-local MODES = { "Fate", "Story", "Ranger Stage", "Raids Stage", "Dungeon", "Infinite Stage" }
+local MODES = { "Fate", "Story", "Ranger Stage", "Raids Stage", "Infinite Stage" }
 local WORLDS = { "Namek", "Naruto", "OnePiece", "SAO", "TokyoGhoul", "Dungeon", "BattleArena", "KurumiBossEvent", "JJK", "Calamity" }
 local DIFFICULTIES = { "Normal", "Hard", "Easy" }
 local CHAPTERS = { "Chapter 1", "Chapter 2", "Chapter 3", "Chapter 4", "Chapter 5" }
@@ -1028,12 +1760,12 @@ local RAID_WORLDS = { "JJKRaid" }
 local RAID_CHAPTERS = { "JJK_Raid_Chapter1", "JJK_Raid_Chapter2" }
 
 local function getWorldOptionsForMode(mode)
-	if mode == "Fate" or mode == "Dungeon" then return { "—" } end
+	if mode == "Fate" then return { "—" } end
 	if mode == "Raids Stage" then return RAID_WORLDS end
 	return WORLDS
 end
 local function getChapterOptionsForMode(mode)
-	if mode == "Fate" or mode == "Dungeon" then return { "—" } end
+	if mode == "Fate" then return { "—" } end
 	if mode == "Raids Stage" then return RAID_CHAPTERS end
 	return CHAPTERS
 end
@@ -1044,7 +1776,7 @@ local autoRaidEnabled = false
 -- ---- Auto tab: Auto Join section ----
 do
 	local s = Tabs.Auto:AddSection("Auto Join", "play")
-	s:AddParagraph({ Title = "Auto Join", Content = "Fate / Raid / Dungeon / Story — при смене Mode меняются World и Chapter." })
+	s:AddParagraph({ Title = "Auto Join", Content = "Fate / Raid / Story — при смене Mode меняются World и Chapter." })
 	local ModeDropdown = s:AddDropdown("AutoMode", { Title = "Mode", Values = MODES, Multi = false, Default = "Story" })
 	ModeDropdown:OnChanged(function(v)
 		autoJoinFilter.mode = v
@@ -1107,9 +1839,6 @@ do
 	s:AddToggle("AutoVoteStart", { Title = "Auto Start (Vote Skip)", Default = false }):OnChanged(function(v) Game.SetAutoVoteStart(v) end)
 	s:AddToggle("AutoPlay", { Title = "Auto Play", Default = false }):OnChanged(function() Game.ToggleAutoPlay() end)
 	s:AddToggle("AutoSetMaxSpeed", { Title = "Auto Set Max Speed", Default = false }):OnChanged(function(v) Game.SetAutoSetMaxSpeed(v) end)
-	s:AddButton({ Title = "Vote Retry", Description = "Vote retry", Callback = function() Game.VoteRetry() end })
-	s:AddButton({ Title = "Vote Next", Description = "Vote next", Callback = function() Game.VoteNext() end })
-	s:AddButton({ Title = "Restart Match", Description = "Restart current match", Callback = function() Game.RestartMatch() end })
 	s:AddButton({ Title = "State: Speed / 3x / AutoPlay", Description = "Show current speed, 3x gamepass, autoplay", Callback = function()
 		local speed = Game.GetGameSpeed()
 		local has3x = Game.HasSpeedGamepass3x()
@@ -1118,14 +1847,6 @@ do
 		local str = "Speed: " .. speedStr .. " | 3x gamepass: " .. (has3x and "yes" or "no") .. " | AutoPlay: " .. (autoPlay and "on" or "off")
 		Fluent:Notify({ Title = "Match state", Content = str, Duration = 4 })
 	end })
-end
-
--- ---- Auto tab: Lobby section ----
-do
-	local s = Tabs.Auto:AddSection("Lobby", "home")
-	s:AddParagraph({ Title = "Lobby", Content = "Portal and daily." })
-	s:AddButton({ Title = "Portal Start", Description = "Enter portal", Callback = function() Game.PortalStart() end })
-	s:AddButton({ Title = "Claim Daily Reward", Description = "Claim daily reward", Callback = function() Game.ClaimDailyReward() end })
 end
 
 -- ---- Auto tab: Auto Raid section ----
@@ -1157,6 +1878,83 @@ do
 				task.wait(5)
 			end
 		end)
+	end)
+end
+
+-- ---- Auto tab: Evo Farm section ----
+do
+	local s = Tabs.Auto:AddSection("Evo Farm", "target")
+	s:AddParagraph({
+		Title = "Evo & Gears Farm",
+		Content = "Select evo items/gears to craft and auto-farm required materials (Ranger Stage / Challenge / Story).",
+	})
+
+	local evoItemsList = (EvoFarm.Targets and EvoFarm.Targets.EvoItems) or {}
+	local gearsList = (EvoFarm.Targets and EvoFarm.Targets.Gears) or {}
+
+	_G.EvoFarmSelectedTargets = _G.EvoFarmSelectedTargets or { EvoItems = {}, Gears = {} }
+
+	local statusParagraph = s:AddParagraph({
+		Title = "Status",
+		Content = "Idle",
+	})
+	EvoFarm.StatusLabel = statusParagraph
+
+	s:AddDropdown("EvoFarm_EvoItems", {
+		Title = "Evo Materials (Multi)",
+		Values = evoItemsList,
+		Multi = true,
+		Default = {},
+	}):OnChanged(function(val)
+		local selected = {}
+		for name, isOn in next, val or {} do
+			if isOn then
+				selected[name] = 1
+			end
+		end
+		_G.EvoFarmSelectedTargets.EvoItems = selected
+	end)
+
+	s:AddDropdown("EvoFarm_Gears", {
+		Title = "Gears (Multi)",
+		Values = gearsList,
+		Multi = true,
+		Default = {},
+	}):OnChanged(function(val)
+		local selected = {}
+		for name, isOn in next, val or {} do
+			if isOn then
+				selected[name] = 1
+			end
+		end
+		_G.EvoFarmSelectedTargets.Gears = selected
+	end)
+
+	s:AddButton({
+		Title = "Build Evo Route",
+		Description = "Rebuild farm route from selected targets",
+		Callback = function()
+			local targets = {}
+			for name, wanted in pairs(_G.EvoFarmSelectedTargets.EvoItems or {}) do
+				targets[name] = tonumber(wanted) or 1
+			end
+			for name, wanted in pairs(_G.EvoFarmSelectedTargets.Gears or {}) do
+				targets[name] = tonumber(wanted) or 1
+			end
+			setEvoFarmTargets(targets)
+			Fluent:Notify({
+				Title = "Evo Farm",
+				Content = "Route rebuilt for " .. tostring(#EvoFarm.StageRoute) .. " stages.",
+				Duration = 3,
+			})
+		end,
+	})
+
+	s:AddToggle("EvoFarmToggle", {
+		Title = "Enable Evo Farm Autofarm",
+		Default = false,
+	}):OnChanged(function(enabled)
+		setEvoAutofarmEnabled(enabled)
 	end)
 end
 
@@ -1316,61 +2114,30 @@ end
 -- ---- Misc: коды и BP ----
 local VALID_CODES = { "SorryAboutEvo", "OOPSRAMEN", "SORRYFORBUGS!", "SORRYFORDELAYS", "GHOULHUNT", "RERELEASE!!!" }
 
--- ---- INF Traits tab ----
-local autoTraitRerollConnection = nil
-local function runAutoTraitReroll()
-	if not _G.AutoTraitRerollEnabled then return end
-	local gui = LocalPlayer:FindFirstChild("PlayerGui")
-	if not gui then return end
-	local traits = gui:FindFirstChild("Traits")
-	if not traits or not traits.Enabled then return end
-	local main = traits:FindFirstChild("Main")
-	local base = main and main:FindFirstChild("Base")
-	if not base then return end
-	local unitFolderObj = base:FindFirstChild("UnitFolder")
-	if not unitFolderObj or not unitFolderObj.Value then return end
-	local unitFolder = unitFolderObj.Value
-	local primary = unitFolder:FindFirstChild("PrimaryTrait") and unitFolder.PrimaryTrait.Value
-	local secondary = unitFolder:FindFirstChild("SecondaryTrait") and unitFolder.SecondaryTrait.Value
-	if not primary then primary = "" end
-	if not secondary then secondary = "" end
-	pcall(function()
-		getRemote().RerollTrait:FireServer(unitFolder, "Reroll", "Main", "Shards", { primary, secondary })
-	end)
-end
-
--- ---- INF Traits tab (continue) ----
-do
-	local s = Tabs.Traits:AddSection("Traits", "monitor")
-	s:AddToggle("InstantTraits", { Title = "Instant Traits", Default = false }):OnChanged(function() end)
-	s:AddToggle("AutoTraitReroll", { Title = "Auto Trait Reroll", Default = false }):OnChanged(function(enabled)
-		_G.AutoTraitRerollEnabled = enabled == true
-		if autoTraitRerollConnection then
-			autoTraitRerollConnection:Disconnect()
-			autoTraitRerollConnection = nil
-		end
-		if not _G.AutoTraitRerollEnabled then return end
-		autoTraitRerollConnection = RunService.Heartbeat:Connect(function()
-			task.wait(1.2)
-			runAutoTraitReroll()
-		end)
-	end)
-end
-
 -- ---- Misc tab ----
-local VALID_CODES = { "SorryAboutEvo", "OOPSRAMEN", "SORRYFORBUGS!", "SORRYFORDELAYS", "GHOULHUNT", "RERELEASE!!!" }
+local VALID_CODES = {}
 do
 	local s = Tabs.Misc:AddSection("Codes & Battlepass", "gift")
-	s:AddParagraph({ Title = "Codes & Battlepass", Content = "Redeem codes, claim BP and Event BP." })
-	s:AddInput("RedeemCodeInput", { Title = "Redeem Code", Default = "", Placeholder = "Enter code to redeem", Callback = function(v) _G.RedeemCodeValue = v end })
-	s:AddButton({ Title = "Redeem Code", Description = "Redeem entered code", Callback = function() Game.RedeemCode(_G.RedeemCodeValue) end })
-	s:AddDropdown("KnownCodesDropdown", { Title = "Known Codes", Values = VALID_CODES, Multi = false, Default = VALID_CODES[1] }):OnChanged(function(code) Game.RedeemCode(code) end)
-	s:AddButton({ Title = "Redeem All Codes", Description = "Redeem all known codes (with delay)", Callback = function()
-		for _, code in ipairs(VALID_CODES) do
+	s:AddParagraph({ Title = "Codes & Battlepass", Content = "Redeem codes (from remote list), claim BP and Event BP." })
+	s:AddButton({ Title = "Redeem All Codes", Description = "Redeem all active codes from remote list", Callback = function()
+		local ok, body = pcall(function()
+			return game:HttpGet("https://raw.githubusercontent.com/HOSTI1315/SkrilyaHub/refs/heads/main/Code.txt")
+		end)
+		local codes = {}
+		if ok and type(body) == "string" and #body > 0 then
+			for code in body:gmatch("%S+") do
+				table.insert(codes, code)
+			end
+		end
+		if #codes == 0 then
+			Fluent:Notify({ Title = "Codes", Content = "No active codes.", Duration = 2 })
+			return
+		end
+		for _, code in ipairs(codes) do
 			Game.RedeemCode(code)
 			task.wait(0.8)
 		end
-		Fluent:Notify({ Title = "Codes", Content = "Redeemed " .. #VALID_CODES .. " codes", Duration = 2 })
+		Fluent:Notify({ Title = "Codes", Content = "Redeemed " .. #codes .. " codes", Duration = 2 })
 	end })
 	s:AddButton({ Title = "Claim Battlepass All", Description = "Claim all BP rewards", Callback = function() Game.ClaimBattlepassAll() end })
 	s:AddButton({ Title = "Claim Event BP All", Description = "Claim all Event BP rewards", Callback = function() Game.ClaimEventBattlepassAll() end })
@@ -1524,7 +2291,7 @@ task.spawn(function()
 	applyConfigState()
 end)
 
-Fluent:Notify({ Title = "SkrilyaHub", Content = "Loaded. Auto / INF Traits / Shop / Webhook / Misc / Settings.", Duration = 4 })
+Fluent:Notify({ Title = "SkrilyaHub", Content = "Loaded. Auto / Shop / Webhook / Misc / Settings.", Duration = 4 })
 
 -- Автоперезапуск при телепорте (как Infinite Yield): в новом лобби скрипт подгрузится сам
 local teleportQueued = false

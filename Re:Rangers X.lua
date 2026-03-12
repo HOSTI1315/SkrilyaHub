@@ -4,7 +4,7 @@ if g.SkrilyaHubLoaded then
 end
 g.SkrilyaHubLoaded = true
 
-print("vFanMirkaEbalSobakv3.23.FarmRelic")
+print("ver. FanMirkaViebalSoakyAutoFarmallnigers")
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -14,7 +14,6 @@ local RunService = game:GetService("RunService")
 
 -- executor HTTP helper (syn.request / http.request / request ...)
 local httprequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
-
 local LocalPlayer = Players.LocalPlayer
 
 -- Ждём загрузки игры
@@ -51,6 +50,32 @@ local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.
 
 -- ============ REMOTES CACHE ============
 local RS = ReplicatedStorage
+
+local Lighting = game:GetService("Lighting")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local function killLightingBlur()
+	for _, inst in ipairs(Lighting:GetChildren()) do
+		if inst:IsA("BlurEffect") or inst:IsA("DepthOfFieldEffect") then
+			inst.Enabled = false
+			inst:Destroy()
+		end
+	end
+end
+
+-- разово при запуске
+killLightingBlur()
+
+-- если игра попытается снова создать эффекты в Lighting
+Lighting.ChildAdded:Connect(function(child)
+	if child:IsA("BlurEffect") or child:IsA("DepthOfFieldEffect") then
+		task.defer(function()
+			child.Enabled = false
+			child:Destroy()
+		end)
+	end
+end)
 
 -- ============ SHARED GAME DATA (CRAFTING / LEVELS / ITEMS) ============
 local Shared = RS:FindFirstChild("Shared")
@@ -432,6 +457,7 @@ local function rebuildEvoFarmFromConfig()
 	local targets = EvoFarm.Config.targets or {}
 	-- базовая суммарная потребность по материалам (с учётом вложенных рецептов)
 	local baseNeed = resolveTargetsToNeedCount(targets)
+	EvoFarm.BaseNeed = baseNeed
 
 	if not EvoFarm.DropIndex or next(EvoFarm.DropIndex) == nil then
 		EvoFarm.DropIndex = buildDropIndex()
@@ -1074,7 +1100,7 @@ local function connectEvoRewardsCallback(rewardsUI)
 				end
 			end
 
-			-- если все цели закрыты по NeedCount, можно выключать
+			-- если текущая цель закрыта по NeedCount, расширяем GlobalNeed ещё на один круг
 			local allDone = true
 			for _, need in pairs(EvoFarm.NeedCount or {}) do
 				if need > 0 then
@@ -1083,8 +1109,24 @@ local function connectEvoRewardsCallback(rewardsUI)
 				end
 			end
 			if allDone then
-				evoAutofarmEnabled = false
-				return
+				-- добавляем ещё одну "копию" целей в глобальную потребность
+				if EvoFarm.BaseNeed then
+					if not EvoFarm.DropIndex or next(EvoFarm.DropIndex) == nil then
+						EvoFarm.DropIndex = buildDropIndex()
+					end
+					for matName, count in pairs(EvoFarm.BaseNeed) do
+						if type(count) == "number" and count > 0 and isMaterialAutoFarmable(matName, EvoFarm.DropIndex) then
+							local cur = EvoFarm.GlobalNeed[matName] or 0
+							EvoFarm.GlobalNeed[matName] = cur + count
+						end
+					end
+					-- пересчитываем нехватку и маршрут уже под следующий круг крафта
+					recalcNeedCountFromInventory()
+					EvoFarm.StageRoute = buildStageRoute(EvoFarm.NeedCount or {}, EvoFarm.DropIndex)
+					EvoFarm.CurrentStageIndex = 1
+					resetEvoStagesState()
+					updateEvoFarmStatus()
+				end
 			end
 
 			-- если круг по стадиям завершён, сбрасываем его
@@ -2026,29 +2068,51 @@ end
 -- ---- Shop tab ----
 local RARITIES = { "Rare", "Epic", "Legendary", "Mythic", "Secret" }
 local BANNERS = { "Standard", "Rateup" }
-local merchantItems = {}
+-- Постоянный список айтемов магазина (не сбрасывается)
+local MERCHANT_ITEMS = { "Cursed Finger", "Dr. Megga Punk", "Green Bean", "Onigiri", "Perfect Stats Key", "Ramen", "Ranger Crystal", "Rubber Fruit", "Soul Fragments", "Stat Boosters", "Stats Key", "Trait Reroll" }
+local merchantItems = table.clone(MERCHANT_ITEMS)
 _G.MerchantSelectedItems = {}
 _G.DeleteRarities = {}
 
 do
 	local s = Tabs.Shop:AddSection("Auto Merchant", "shopping-cart")
 	s:AddParagraph({ Title = "Auto Merchant", Content = "Refresh items, select items, enable to buy max." })
-	s:AddDropdown("MerchantItems", { Title = "Select Items", Description = "Items to buy", Values = merchantItems, Multi = true, Default = {} }):OnChanged(function(val)
+	local function rebuildMerchantSelectedFromOptions()
 		local arr = {}
-		for k, v in next, val or {} do if v then table.insert(arr, k) end end
+		local opt = Options.MerchantItems
+		local val = opt and opt.Value or nil
+		for k, v in next, val or {} do
+			if v then
+				table.insert(arr, k)
+			end
+		end
 		_G.MerchantSelectedItems = arr
+	end
+
+	s:AddDropdown("MerchantItems", { Title = "Select Items", Description = "Items to buy", Values = merchantItems, Multi = true, Default = {} }):OnChanged(function(_)
+		rebuildMerchantSelectedFromOptions()
 	end)
-	s:AddButton({ Title = "Refresh Items", Description = "Load merchant item list", Callback = function()
-		table.clear(merchantItems)
+	s:AddButton({ Title = "Refresh Items", Description = "Merge current shop items into list", Callback = function()
+		local seen = {}
+		for _, n in ipairs(merchantItems) do seen[n] = true end
 		local pd = Game.GetPlayerData()
 		if pd and pd:FindFirstChild("Merchant") then
 			for _, child in ipairs(pd.Merchant:GetChildren()) do
-				table.insert(merchantItems, child.Name)
+				if not seen[child.Name] then
+					seen[child.Name] = true
+					table.insert(merchantItems, child.Name)
+				end
 			end
 		end
 		if Options.MerchantItems and Options.MerchantItems.SetValues then
+			-- сохраняем текущий выбор (из конфига) и перекидываем его на новый список айтемов
+			local prevSelected = {}
+			for _, name in ipairs(_G.MerchantSelectedItems or {}) do
+				prevSelected[name] = true
+			end
 			Options.MerchantItems:SetValues(merchantItems)
-			Options.MerchantItems:SetValue({})
+			Options.MerchantItems:SetValue(prevSelected)
+			rebuildMerchantSelectedFromOptions()
 		end
 		Fluent:Notify({ Title = "Merchant", Content = (#merchantItems > 0 and ("Loaded " .. #merchantItems .. " items") or "No merchant data"), Duration = 2 })
 	end })
@@ -2222,8 +2286,10 @@ local function applyConfigState()
 		if opts.AutoMerchantToggle and opts.AutoMerchantToggle.Value then
 			_G.AutoMerchantEnabled = true
 			_G.MerchantSelectedItems = {}
-			if opts.MerchantItems and opts.MerchantItems.Value then
-				for k, v in next, opts.MerchantItems.Value do if v then table.insert(_G.MerchantSelectedItems, k) end end
+			if Options.MerchantItems and Options.MerchantItems.Value then
+				for k, v in next, Options.MerchantItems.Value do
+					if v then table.insert(_G.MerchantSelectedItems, k) end
+				end
 			end
 			task.spawn(function()
 				while _G.AutoMerchantEnabled do

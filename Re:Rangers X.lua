@@ -4,7 +4,7 @@ if g.SkrilyaHubLoaded then
 end
 g.SkrilyaHubLoaded = true
 
-print("ver. 69")
+print("ver. 1315")
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -307,7 +307,7 @@ local function buildEvoFarmProgressTextForWebhook(maxLines)
 		while #lines > maxLines do
 			table.remove(lines)
 		end
-		table.insert(lines, string.format("... и ещё %d ресурс(ов)", extra))
+		table.insert(lines, string.format("... and %d more", extra))
 	end
 
 	return table.concat(lines, "\n")
@@ -1769,7 +1769,37 @@ end
 -- ============ GAME API: WEBHOOK ============
 local webhookEnabled = false
 local webhookUrl = ""
+local webhookDiscordId = ""
 local webhookRewardsGuard = nil
+
+-- Secret units/items for ping (internal names from game data + text "Secret"/"[Secret]")
+local SECRET_UNIT_NAMES = {
+	-- tier_list + DampGame Units
+	Ace = true, Archer = true, Ishtar = true, Enkidu = true, ["Fire Fist"] = true,
+	["Knight King Alter"] = true, ["Saber Alter"] = true, Gilgamesh = true, Shirou = true, Jeanne = true, Kiritsugu = true,
+	["Silver Reaper"] = true, ["Silver Reaper (OWL)"] = true, ["Crimson Owl"] = true, ["Kishou_Arima:Evo"] = true,
+	Shadowborne = true, ["Blood Queen"] = true, Shadow = true, ["Shadow (Atomic)"] = true,
+	["Judo Preist"] = true, Ayanokoji = true, Lullaby = true, ["Lullaby (Domination)"] = true, ["Pride (Sun)"] = true,
+	["Ura (Kai)"] = true, ["Shin (Reverse)"] = true, ["The Almighty"] = true, ["Ichigoat (True)"] = true,
+	["Hana (True Release)"] = true, ["Flame Captain"] = true, ["Shadow Knight"] = true, ["Shadow Commander"] = true,
+	["Shadow Monarch (Evo)"] = true, Zookeeper = true, ["Virtual Swordsman (Stardust)"] = true,
+	["Virtual Swordsman (King)"] = true, ["Virtual Sniper"] = true, ["Aldebo (Seduction)"] = true,
+	["Demo (Hellflames)"] = true, Gappy = true, ["Gravity Priest"] = true, ["Priest of Heaven (Ascended)"] = true,
+	Artist = true, Toru = true, ["The Strongest"] = true, ["The Strongest (Void)"] = true, ["Curse King"] = true,
+	["Curse King (Shrine)"] = true, Yoka = true, ["Yoka (Stardust)"] = true, Frieren = true, Lucci = true,
+	Koromu = true, ["Koromu (Zaphkel)"] = true, Dracula = true, ["Dracula (Restriction)"] = true,
+	["Pumpkin Queen"] = true, ["Pumpkin Queen (Explosive)"] = true, ["Skeleton King"] = true,
+	["Skeleton King (Skull Guitar)"] = true, Homoro = true, ["Homoro (Time Witch)"] = true,
+	["War Girl"] = true, ["War Girl (Arsenal)"] = true, ["The Fear"] = true, ["The Fear (Volt Ring)"] = true,
+	Jiji = true, Cloud = true, Tidus = true, Bartolomeo = true, ["Shoru (Noble)"] = true,
+	["Fairy Queen"] = true, ["Celestial Mage"] = true, ["Dark Sorcerer"] = true,
+	["Perfect Soldier"] = true, ["Confident Soldier"] = true, Professor = true,
+	Bunny = true, ["Bunny (Full Moon)"] = true, ["Omega Dragonlord"] = true, ["Prodigy Ascendant"] = true,
+	["Primal Fusion"] = true, ["Perfect Bio-Android"] = true, ["Gigi (Evil)"] = true,
+	["Ice General"] = true, ["Chainsaw Devil"] = true, ["Control Devil"] = true,
+	["Fingernail Saint (Fourth Form)"] = true, ["Skeleton Knight"] = true, ["Griffin (Heavenly Feather)"] = true,
+	Berserker = true, ["Falcon of Darkness"] = true, ["Falcon of Darkness (Darkness Merged)"] = true,
+}
 
 function Game.SetWebhook(enabled, url)
 	webhookEnabled = enabled == true
@@ -1794,6 +1824,7 @@ function Game.SetWebhook(enabled, url)
 				local totalGold = "—"
 				local totalGems = "—"
 				local rewardParts = {}
+				local hasSecretDrop = false
 				pcall(function()
 					if not LocalPlayer then return end
 					local main = rewardsUI:FindFirstChild("Main")
@@ -1844,7 +1875,14 @@ function Game.SetWebhook(enabled, url)
 								local nameLabel = info:FindFirstChild("ItemsNames")
 								local amountLabel = info:FindFirstChild("DropAmonut")
 								if nameLabel and amountLabel and nameLabel:IsA("TextLabel") and amountLabel:IsA("TextLabel") then
-									table.insert(rewardParts, string.format("%s × %s", nameLabel.Text or "?", amountLabel.Text or "?"))
+									local txt = nameLabel.Text or "?"
+									local amt = amountLabel.Text or "?"
+									table.insert(rewardParts, string.format("• %s × %s", txt, amt))
+									if not hasSecretDrop then
+										if (txt and (txt:lower():find("secret") or txt:find("%[Secret%]"))) or (child.Name and SECRET_UNIT_NAMES[child.Name]) then
+											hasSecretDrop = true
+										end
+									end
 								end
 							end
 						end
@@ -1863,31 +1901,29 @@ function Game.SetWebhook(enabled, url)
 					end
 				end)
 
-				local rewardsText = #rewardParts > 0 and table.concat(rewardParts, "\n") or "—"
+				local formattedRewards = "```\n" .. (#rewardParts > 0 and table.concat(rewardParts, "\n") or "Empty") .. "\n```"
 				local playerName = LocalPlayer and (LocalPlayer.DisplayName or LocalPlayer.Name) or "?"
 
 				local evoFarmText = buildEvoFarmProgressTextForWebhook(12)
 
 				local embedColor = (statusStr == "WON") and 3066993 or 15158332
+				local statusEmoji = (statusStr == "WON") and "🏆" or "💀"
+				local matchInfoValue = string.format("```\n%-14s %-8s %s\n%-14s %-8s %s\n```\n**Mode:** %s\n**Map:** %s", "Player", "Result", "Time", playerName, statusStr, timeStr, modeStr, mapStr)
 				local embed = {
 					title = "Re:Rangers X — Match Result",
 					color = embedColor,
 					fields = {
-						{ name = "Player", value = playerName, inline = true },
-						{ name = "Result", value = statusStr, inline = true },
-						{ name = "Duration", value = timeStr, inline = true },
-						{ name = "Mode", value = modeStr, inline = true },
-						{ name = "Map", value = mapStr, inline = false },
-						{ name = "Rewards", value = rewardsText, inline = false },
-						{ name = "Gold", value = tostring(totalGold), inline = true },
-						{ name = "Gems", value = tostring(totalGems), inline = true },
+						{ name = "Match Info", value = matchInfoValue, inline = false },
+						{ name = "Rewards", value = formattedRewards, inline = false },
+						{ name = "Economy", value = string.format("Gems: `%s`  Gold: `%s`", tostring(totalGems), tostring(totalGold)), inline = false },
 					},
-					footer = { text = "SkrilyaHub • " .. os.date("%Y-%m-%d %H:%M:%S") }
+					footer = { text = "SkrilyaHub • " .. os.date("%d.%m.%Y %H:%M:%S") }
 				}
 				if evoFarmText and #evoFarmText > 0 then
-					table.insert(embed.fields, { name = "Evo Farm", value = evoFarmText, inline = false })
+					table.insert(embed.fields, { name = "Evo Farm Progress", value = "```\n" .. evoFarmText .. "\n```", inline = false })
 				end
-				Game.SendWebhookMessage(nil, embed)
+				local content = (hasSecretDrop and webhookDiscordId and #webhookDiscordId > 0) and ("<@" .. webhookDiscordId .. ">") or nil
+				Game.SendWebhookMessage(content, embed)
 			end)
 		end)
 	end
@@ -2358,7 +2394,7 @@ local function buildShopSection(shopKey, shopFolderName, itemsList, selectedKey,
 				task.wait(1)
 			end
 		end)
-	end })
+	end)
 end
 
 buildShopSection("RaidShop", "Raid_Shop", RAID_SHOP_ITEMS, "RaidShopSelectedItems", Game.BuyRaidShopItem, "Auto Raid Shop", "Raid Currency. Select items, enable to buy max.")
@@ -2394,9 +2430,10 @@ end
 -- ---- Webhook tab ----
 do
 	local s = Tabs.Webhook:AddSection("Discord Webhook", "mail")
-	s:AddParagraph({ Title = "Discord Webhook", Content = "When enabled, sends 'Победил', time and rewards on RewardsUI.Enabled." })
+	s:AddParagraph({ Title = "Discord Webhook", Content = "When enabled, sends match result and rewards on RewardsUI.Enabled. Discord ID pings you when a Secret drop is detected." })
 	s:AddToggle("WebhookEnable", { Title = "Enable Webhook", Default = false }):OnChanged(function(v) Game.SetWebhook(v, webhookUrl) end)
 	s:AddInput("WebhookURL", { Title = "Webhook URL", Default = "https://discord.com/api/webhooks/...", Placeholder = "Discord webhook URL", Callback = function(v) webhookUrl = v Game.SetWebhook(webhookEnabled, v) end })
+	s:AddInput("WebhookDiscordID", { Title = "Discord ID (optional)", Default = "", Placeholder = "123456789 — ping on Secret drop", Callback = function(v) webhookDiscordId = (v and tostring(v):gsub("%s+", "")) or "" end })
 	s:AddButton({ Title = "Send Test Message", Description = "Send a test message", Callback = function()
 		Game.SendWebhookMessage("SkrilyaHub - Test message")
 		Fluent:Notify({ Title = "Webhook", Content = "Test sent", Duration = 2 })
@@ -2626,6 +2663,9 @@ local function applyConfigState()
 		if opts.WebhookEnable and opts.WebhookEnable.Value then
 			local whUrl = (opts.WebhookURL and opts.WebhookURL.Value) or webhookUrl
 			if whUrl and #whUrl > 10 then webhookEnabled = true webhookUrl = whUrl Game.SetWebhook(true, whUrl) end
+		end
+		if opts.WebhookDiscordID and opts.WebhookDiscordID.Value then
+			webhookDiscordId = (tostring(opts.WebhookDiscordID.Value or ""):gsub("%s+", "")) or ""
 		end
 		if opts.AutoTraitReroll and opts.AutoTraitReroll.Value then
 			_G.AutoTraitRerollEnabled = true

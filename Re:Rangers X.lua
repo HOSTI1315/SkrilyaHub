@@ -4,7 +4,7 @@ if g.SkrilyaHubLoaded then
 end
 g.SkrilyaHubLoaded = true
 
-print("ver. 52")
+print("ver. 69")
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -616,6 +616,9 @@ local function getRemote()
 		EventClaimBp = wfc(wfc(R, "Events"), "EventClaimBp"),
 		SettingEvent = wfc(wfc(Server, "Settings"), "Setting_Event"),
 		Merchant = wfc(wfc(Server, "Gameplay"), "Merchant"),
+		Raid_Shop = wfc(wfc(Server, "Gameplay"), "Raid_Shop"),
+		JJK_RaidShop = wfc(wfc(Server, "Gameplay"), "JJK_RaidShop"),
+		Calamity_Shop = wfc(wfc(Server, "Gameplay"), "Calamity_Shop"),
 		UnitsGacha = wfc(wfc(Server, "Gambling"), "UnitsGacha"),
 		SelectRateUpBanner = wfc(wfc(Server, "Gambling"), "SelectRateUpBanner"),
 		RerollTrait = wfc(wfc(Server, "Gambling"), "RerollTrait"),
@@ -774,6 +777,35 @@ end
 local function isInLobby()
 	return not LocalPlayer:FindFirstChild("Yen")
 end
+
+-- Геймпассы в лобби (Auto Trait Reroll, Fast Star)
+local function applyLobbyGamepasses()
+	if not isInLobby() then return end
+	local pd = RS:FindFirstChild("Player_Data")
+	if not pd then return end
+	pd = pd:FindFirstChild(LocalPlayer.Name)
+	if not pd then return end
+	local gp = pd:FindFirstChild("Gamepass")
+	if not gp then return end
+	local names = {"Auto Trait Reroll", "Fast Star"}
+	for _, name in ipairs(names) do
+		local v = gp:FindFirstChild(name)
+		if v and v:IsA("ValueBase") then
+			v.Value = true
+			print("[SkrilyaHub] Set " .. name .. " = true")
+		end
+	end
+end
+
+task.spawn(function()
+	task.wait(2)
+	if isInLobby() then
+		local pd = RS:WaitForChild("Player_Data", 10)
+		if pd and pd:FindFirstChild(LocalPlayer.Name) then
+			applyLobbyGamepasses()
+		end
+	end
+end)
 
 -- ============ RANGER STAGE AUTOFARM ============
 local RANGER_PROGRESS_FILE = "SkrilyaHub_Config/SkrilyaHub_RangerProgress.json"
@@ -1571,6 +1603,27 @@ function Game.TryOpenEventBattlePass()
 	return false
 end
 
+function Game.TryOpenRaidShop()
+	local gui = LocalPlayer:FindFirstChild("PlayerGui")
+	local s = gui and gui:FindFirstChild("Raid_Shop")
+	if s then s.Enabled = true return true end
+	return false
+end
+
+function Game.TryOpenJJKRaidShop()
+	local gui = LocalPlayer:FindFirstChild("PlayerGui")
+	local s = gui and gui:FindFirstChild("JJK_Raid_Shop")
+	if s then s.Enabled = true return true end
+	return false
+end
+
+function Game.TryOpenCalamityShop()
+	local gui = LocalPlayer:FindFirstChild("PlayerGui")
+	local s = gui and gui:FindFirstChild("Calamity_Shop")
+	if s then s.Enabled = true return true end
+	return false
+end
+
 -- Открыть Traits с выбранным юнитом (unitFolder из Collection). По дампу: Traits.Enabled + UnitFolder.Value
 function Game.OpenTraitsUI(unitFolder)
 	local gui = LocalPlayer:FindFirstChild("PlayerGui")
@@ -1599,6 +1652,18 @@ end
 -- ============ GAME API: MERCHANT / SUMMON ============
 function Game.BuyMerchantItem(itemName, amount)
 	getRemote().Merchant:FireServer(itemName, amount or 1)
+end
+
+function Game.BuyRaidShopItem(itemName, amount)
+	getRemote().Raid_Shop:FireServer(itemName, amount or 1)
+end
+
+function Game.BuyJJKRaidShopItem(itemName, amount)
+	getRemote().JJK_RaidShop:FireServer(itemName, amount or 1)
+end
+
+function Game.BuyCalamityShopItem(itemName, amount)
+	getRemote().Calamity_Shop:FireServer(itemName, amount or 1)
 end
 
 function Game.SelectBanner(bannerId)
@@ -2245,6 +2310,61 @@ do
 	end)
 end
 
+-- Auto Raid Shop, JJK Raid Shop, Calamity Shop (фиксированные списки, меняются только лимиты)
+local RAID_SHOP_ITEMS = { "Cursed Finger", "Corpse Rib Cage", "Gyro's Steel Ball", "Dr. Megga Punk", "Stats Key", "Soul Fragments", "Gourmet Meal", "Trait Reroll", "Perfect Stats Key" }
+local JJK_RAID_SHOP_ITEMS = { "Soul Fragments", "Perfect Stats Key", "Cursed Finger", "Gorodo", "King's Shrine", "Trait Reroll", "Dr. Megga Punk", "Stats Key" }
+local CALAMITY_SHOP_ITEMS = { "Strongest Seal", "Cursed Finger", "Stats Key", "Perfect Stats Key", "Cursed Ring", "Soul Fragments", "Trait Reroll", "Dr. Megga Punk" }
+_G.RaidShopSelectedItems = {}
+_G.JJKRaidShopSelectedItems = {}
+_G.CalamityShopSelectedItems = {}
+
+local function buildShopSection(shopKey, shopFolderName, itemsList, selectedKey, buyFunc, title, desc)
+	local s = Tabs.Shop:AddSection(title, "shopping-bag")
+	s:AddParagraph({ Title = title, Content = desc })
+	local function rebuildSelected(opt)
+		local arr = {}
+		local val = opt and opt.Value or nil
+		for k, v in next, val or {} do
+			if v then table.insert(arr, k) end
+		end
+		_G[selectedKey] = arr
+	end
+
+	local optName = shopKey .. "Items"
+	local dropdown = s:AddDropdown(optName, { Title = "Select Items", Values = itemsList, Multi = true, Default = {} })
+	dropdown:OnChanged(function() rebuildSelected(Options[optName]) end)
+
+	local toggleName = "Auto" .. shopKey .. "Toggle"
+	s:AddToggle(toggleName, { Title = "Enable Auto " .. title, Default = false }):OnChanged(function(enabled)
+		_G[toggleName] = enabled
+		if not enabled then return end
+		task.spawn(function()
+			while _G[toggleName] do
+				local pd = Game.GetPlayerData()
+				local shop = pd and pd:FindFirstChild(shopFolderName)
+				if shop then
+					for _, itemName in ipairs(_G[selectedKey] or {}) do
+						local item = shop:FindFirstChild(itemName)
+						if item and item:FindFirstChild("Quantity") then
+							local qMax = item.Quantity.Value
+							local qMaxNum = tonumber(qMax)
+							if not qMaxNum then qMaxNum = 999 end
+							local bought = item:FindFirstChild("BuyAmount") and (tonumber(item.BuyAmount.Value) or 0) or 0
+							local q = math.max(0, qMaxNum - bought)
+							if q > 0 then buyFunc(itemName, q) end
+						end
+					end
+				end
+				task.wait(1)
+			end
+		end)
+	end })
+end
+
+buildShopSection("RaidShop", "Raid_Shop", RAID_SHOP_ITEMS, "RaidShopSelectedItems", Game.BuyRaidShopItem, "Auto Raid Shop", "Raid Currency. Select items, enable to buy max.")
+buildShopSection("JJKRaidShop", "JJK_Raid_Shop", JJK_RAID_SHOP_ITEMS, "JJKRaidShopSelectedItems", Game.BuyJJKRaidShopItem, "Auto JJK Raid Shop", "Cursed Scrolls. Select items, enable to buy max.")
+buildShopSection("CalamityShop", "Calamity_Shop", CALAMITY_SHOP_ITEMS, "CalamityShopSelectedItems", Game.BuyCalamityShopItem, "Auto Calamity Shop", "Cursed Essence. Select items, enable to buy max.")
+
 do
 	local s = Tabs.Shop:AddSection("Auto Summon", "sparkles")
 	s:AddParagraph({ Title = "Auto Summon", Content = "Select banner, rarities to delete, enable for 10x loop." })
@@ -2408,6 +2528,78 @@ local function applyConfigState()
 							if item and item:FindFirstChild("Quantity") then
 								local q = item.Quantity.Value - (item:FindFirstChild("BuyAmount") and item.BuyAmount.Value or 0)
 								if q > 0 then Game.BuyMerchantItem(itemName, q) end
+							end
+						end
+					end
+					task.wait(1)
+				end
+			end)
+		end
+		if opts.AutoRaidShopToggle and opts.AutoRaidShopToggle.Value then
+			_G.AutoRaidShopToggle = true
+			_G.RaidShopSelectedItems = {}
+			if opts.RaidShopItems and opts.RaidShopItems.Value then
+				for k, v in next, opts.RaidShopItems.Value do if v then table.insert(_G.RaidShopSelectedItems, k) end end
+			end
+			task.spawn(function()
+				while _G.AutoRaidShopToggle do
+					local pd = Game.GetPlayerData()
+					if pd and pd:FindFirstChild("Raid_Shop") then
+						for _, itemName in ipairs(_G.RaidShopSelectedItems or {}) do
+							local item = pd.Raid_Shop:FindFirstChild(itemName)
+							if item and item:FindFirstChild("Quantity") then
+								local qMaxNum = tonumber(item.Quantity.Value) or 999
+								local bought = (item:FindFirstChild("BuyAmount") and tonumber(item.BuyAmount.Value)) or 0
+								local q = math.max(0, qMaxNum - bought)
+								if q > 0 then Game.BuyRaidShopItem(itemName, q) end
+							end
+						end
+					end
+					task.wait(1)
+				end
+			end)
+		end
+		if opts.AutoJJKRaidShopToggle and opts.AutoJJKRaidShopToggle.Value then
+			_G.AutoJJKRaidShopToggle = true
+			_G.JJKRaidShopSelectedItems = {}
+			if opts.JJKRaidShopItems and opts.JJKRaidShopItems.Value then
+				for k, v in next, opts.JJKRaidShopItems.Value do if v then table.insert(_G.JJKRaidShopSelectedItems, k) end end
+			end
+			task.spawn(function()
+				while _G.AutoJJKRaidShopToggle do
+					local pd = Game.GetPlayerData()
+					if pd and pd:FindFirstChild("JJK_Raid_Shop") then
+						for _, itemName in ipairs(_G.JJKRaidShopSelectedItems or {}) do
+							local item = pd.JJK_Raid_Shop:FindFirstChild(itemName)
+							if item and item:FindFirstChild("Quantity") then
+								local qMaxNum = tonumber(item.Quantity.Value) or 999
+								local bought = (item:FindFirstChild("BuyAmount") and tonumber(item.BuyAmount.Value)) or 0
+								local q = math.max(0, qMaxNum - bought)
+								if q > 0 then Game.BuyJJKRaidShopItem(itemName, q) end
+							end
+						end
+					end
+					task.wait(1)
+				end
+			end)
+		end
+		if opts.AutoCalamityShopToggle and opts.AutoCalamityShopToggle.Value then
+			_G.AutoCalamityShopToggle = true
+			_G.CalamityShopSelectedItems = {}
+			if opts.CalamityShopItems and opts.CalamityShopItems.Value then
+				for k, v in next, opts.CalamityShopItems.Value do if v then table.insert(_G.CalamityShopSelectedItems, k) end end
+			end
+			task.spawn(function()
+				while _G.AutoCalamityShopToggle do
+					local pd = Game.GetPlayerData()
+					if pd and pd:FindFirstChild("Calamity_Shop") then
+						for _, itemName in ipairs(_G.CalamityShopSelectedItems or {}) do
+							local item = pd.Calamity_Shop:FindFirstChild(itemName)
+							if item and item:FindFirstChild("Quantity") then
+								local qMaxNum = tonumber(item.Quantity.Value) or 999
+								local bought = (item:FindFirstChild("BuyAmount") and tonumber(item.BuyAmount.Value)) or 0
+								local q = math.max(0, qMaxNum - bought)
+								if q > 0 then Game.BuyCalamityShopItem(itemName, q) end
 							end
 						end
 					end

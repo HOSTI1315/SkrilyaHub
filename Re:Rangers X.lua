@@ -4,7 +4,7 @@ if g.SkrilyaHubLoaded then
 end
 g.SkrilyaHubLoaded = true
 
-print("ver. 1315")
+print("ver. Govnomes")
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -1908,7 +1908,8 @@ function Game.SetWebhook(enabled, url)
 
 				local embedColor = (statusStr == "WON") and 3066993 or 15158332
 				local statusEmoji = (statusStr == "WON") and "🏆" or "💀"
-				local matchInfoValue = string.format("```\n%-14s %-8s %s\n%-14s %-8s %s\n```\n**Mode:** %s\n**Map:** %s", "Player", "Result", "Time", playerName, statusStr, timeStr, modeStr, mapStr)
+				local hiddenName = "||" .. (playerName or "?") .. "||"
+				local matchInfoValue = string.format("**Player:** %s\n**Result:** %s\n**Time:** %s\n\n**Mode:** %s\n**Map:** %s", hiddenName, statusStr, timeStr, modeStr, mapStr)
 				local embed = {
 					title = "Re:Rangers X — Match Result",
 					color = embedColor,

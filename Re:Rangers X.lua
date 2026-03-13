@@ -4,7 +4,7 @@ if g.SkrilyaHubLoaded then
 end
 g.SkrilyaHubLoaded = true
 
-print("ver. FanMirkaViebalSoakyAutoFarmallnigers")
+print("ver. 52")
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -115,7 +115,8 @@ local EvoFarm = {
 		Gears = {},
 	},
 	Config = nil, -- будет заполнен при загрузке/сохранении
-	GlobalNeed = {}, -- суммарная потребность по материалам для всех целей (на 1 крафт каждой)
+	GlobalNeed = {}, -- суммарная потребность по материалам (текущий круг крафта)
+	TotalNeed = {}, -- BaseNeed * craftsTotal (общий список на все крафты)
 	NeedCount = {},  -- текущая глобальная нехватка (globalLacking) = max(0, GlobalNeed - have)
 	DropIndex = {},
 	StageRoute = {},
@@ -177,6 +178,9 @@ local function loadEvoFarmConfig()
 	data = (ok and data and type(data) == "table") and data or {}
 	if type(data.targets) ~= "table" then data.targets = {} end
 	if type(data.stages) ~= "table" then data.stages = {} end
+	-- craftsTotal: 0/nil = infinite; craftsCompleted: сколько уже нафармлено
+	if type(data.craftsTotal) ~= "number" then data.craftsTotal = 1 end
+	if type(data.craftsCompleted) ~= "number" then data.craftsCompleted = 0 end
 	return data
 end
 
@@ -221,8 +225,15 @@ local function updateEvoFarmStatus()
 	end
 
 	local desc
+	local craftsTotal = tonumber(EvoFarm.Config and EvoFarm.Config.craftsTotal) or 0
+	local craftsCompleted = tonumber(EvoFarm.Config and EvoFarm.Config.craftsCompleted) or 0
+	local craftPart = ""
+	if craftsTotal > 0 then
+		craftPart = string.format(" | Craft %d/%d", craftsCompleted, craftsTotal)
+	end
+
 	if totalNeed <= 0 then
-		desc = "Idle"
+		desc = "Idle" .. craftPart
 	else
 		local farmed = math.max(0, totalNeed - totalLacking)
 		if farmed > totalNeed then farmed = totalNeed end
@@ -257,10 +268,49 @@ local function updateEvoFarmStatus()
 		end
 
 		local nowPart = (#currentNames > 0) and (" | Now: " .. table.concat(currentNames, ", ")) or ""
-		desc = string.format("Farm %d / %d items%s", farmed, totalNeed, nowPart)
+		desc = string.format("Farm %d / %d items%s%s", farmed, totalNeed, nowPart, craftPart)
 	end
 
 	label:SetDesc(desc)
+end
+
+-- Текстовый отчёт по EvoFarm для вебхука: "Ресурс (have/need) ✅"
+local function buildEvoFarmProgressTextForWebhook(maxLines)
+	maxLines = maxLines or 10
+	if not EvoFarm or not EvoFarm.GlobalNeed or not next(EvoFarm.GlobalNeed) then
+		return nil
+	end
+
+	local lines = {}
+	for matName, needTotal in pairs(EvoFarm.GlobalNeed) do
+		if type(needTotal) == "number" and needTotal > 0 then
+			local missing = EvoFarm.NeedCount and tonumber(EvoFarm.NeedCount[matName]) or needTotal
+			missing = math.max(0, missing)
+			local have = needTotal - missing
+			if have < 0 then have = 0 end
+
+			local meta = getItemMeta and getItemMeta(matName) or nil
+			local display = (meta and meta.DisplayName) or matName
+			local doneMark = (missing <= 0) and " ✅" or ""
+			table.insert(lines, string.format("%s (%d/%d)%s", tostring(display), have, needTotal, doneMark))
+		end
+	end
+
+	table.sort(lines)
+
+	if #lines == 0 then
+		return nil
+	end
+
+	if #lines > maxLines then
+		local extra = #lines - maxLines
+		while #lines > maxLines do
+			table.remove(lines)
+		end
+		table.insert(lines, string.format("... и ещё %d ресурс(ов)", extra))
+	end
+
+	return table.concat(lines, "\n")
 end
 
 -- ============ RECIPE RESOLVER ============
@@ -473,6 +523,18 @@ local function rebuildEvoFarmFromConfig()
 		end
 	end
 	EvoFarm.GlobalNeed = globalNeed
+
+	-- общий список: BaseNeed * craftsTotal (0 = infinite, нет общего списка)
+	local craftsTotalNum = tonumber(EvoFarm.Config and EvoFarm.Config.craftsTotal) or 1
+	local totalNeedMap = {}
+	if craftsTotalNum > 0 then
+		for matName, count in pairs(baseNeed) do
+			if type(matName) == "string" and type(count) == "number" and count > 0 then
+				totalNeedMap[matName] = count * craftsTotalNum
+			end
+		end
+	end
+	EvoFarm.TotalNeed = totalNeedMap
 
 	-- первоначальная глобальная нехватка (NeedCount) по инвентарю
 	local function initialRecalc()
@@ -1109,6 +1171,23 @@ local function connectEvoRewardsCallback(rewardsUI)
 				end
 			end
 			if allDone then
+				local craftsTotal = tonumber(EvoFarm.Config and EvoFarm.Config.craftsTotal) or 0
+				local craftsCompleted = (tonumber(EvoFarm.Config and EvoFarm.Config.craftsCompleted) or 0) + 1
+				EvoFarm.Config.craftsCompleted = craftsCompleted
+				saveEvoFarmConfig(EvoFarm.Config)
+
+				if craftsTotal > 0 and craftsCompleted >= craftsTotal then
+					setEvoAutofarmEnabled(false)
+					updateEvoFarmStatus()
+					Fluent:Notify({
+						Title = "Evo Farm",
+						Content = "Complete: " .. tostring(craftsCompleted) .. "/" .. tostring(craftsTotal) .. " crafts",
+						Duration = 5,
+					})
+					Game.LeaveRoom()
+					return
+				end
+
 				-- добавляем ещё одну "копию" целей в глобальную потребность
 				if EvoFarm.BaseNeed then
 					if not EvoFarm.DropIndex or next(EvoFarm.DropIndex) == nil then
@@ -1722,6 +1801,8 @@ function Game.SetWebhook(enabled, url)
 				local rewardsText = #rewardParts > 0 and table.concat(rewardParts, "\n") or "—"
 				local playerName = LocalPlayer and (LocalPlayer.DisplayName or LocalPlayer.Name) or "?"
 
+				local evoFarmText = buildEvoFarmProgressTextForWebhook(12)
+
 				local embedColor = (statusStr == "WON") and 3066993 or 15158332
 				local embed = {
 					title = "Re:Rangers X — Match Result",
@@ -1738,6 +1819,9 @@ function Game.SetWebhook(enabled, url)
 					},
 					footer = { text = "SkrilyaHub • " .. os.date("%Y-%m-%d %H:%M:%S") }
 				}
+				if evoFarmText and #evoFarmText > 0 then
+					table.insert(embed.fields, { name = "Evo Farm", value = evoFarmText, inline = false })
+				end
 				Game.SendWebhookMessage(nil, embed)
 			end)
 		end)
@@ -1972,6 +2056,26 @@ do
 		_G.EvoFarmSelectedTargets.Gears = selected
 	end)
 
+	if _G.EvoFarmCraftsTotal == nil then
+		local cfgTotal = tonumber(EvoFarm.Config and EvoFarm.Config.craftsTotal)
+		_G.EvoFarmCraftsTotal = (cfgTotal ~= nil and cfgTotal >= 0) and cfgTotal or 1
+	end
+	s:AddSlider("EvoFarm_CraftsTotal", {
+		Title = "Crafts to farm",
+		Description = "How many crafts (0 = infinite)",
+		Min = 0,
+		Max = 999,
+		Default = _G.EvoFarmCraftsTotal,
+		Rounding = 1,
+	}):OnChanged(function(val)
+		local intVal = math.max(0, math.floor(tonumber(val) or 1))
+		_G.EvoFarmCraftsTotal = intVal
+		-- принудительно вернуть в слайдер целое значение
+		if Options and Options.EvoFarm_CraftsTotal and Options.EvoFarm_CraftsTotal.SetValue then
+			Options.EvoFarm_CraftsTotal:SetValue(intVal)
+		end
+	end)
+
 	s:AddButton({
 		Title = "Build Evo Route",
 		Description = "Rebuild farm route from selected targets",
@@ -1983,10 +2087,14 @@ do
 			for name, wanted in pairs(_G.EvoFarmSelectedTargets.Gears or {}) do
 				targets[name] = tonumber(wanted) or 1
 			end
+			local craftsTotal = math.max(0, math.floor(tonumber(_G.EvoFarmCraftsTotal) or 1))
+			EvoFarm.Config = EvoFarm.Config or { targets = {}, stages = {} }
+			EvoFarm.Config.craftsTotal = craftsTotal
+			EvoFarm.Config.craftsCompleted = 0
 			setEvoFarmTargets(targets)
 			Fluent:Notify({
 				Title = "Evo Farm",
-				Content = "Route rebuilt for " .. tostring(#EvoFarm.StageRoute) .. " stages.",
+				Content = "Route rebuilt for " .. tostring(#EvoFarm.StageRoute) .. " stages. Crafts: " .. (craftsTotal == 0 and "∞" or tostring(craftsTotal)),
 				Duration = 3,
 			})
 		end,

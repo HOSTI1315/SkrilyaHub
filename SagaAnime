@@ -1,0 +1,24 @@
+getgenv().UserConfig = {
+    AutoStartStory = {"S", 3, 1, 1},
+    KillAura = { OffsetY = 0, HoverRadius = 4, HoverSpeed = 3 },
+    RestartIfNoMobsAfter = 5,
+    KeyUse = {
+        {Enum.KeyCode.ButtonX,     4},
+        {Enum.KeyCode.Z,           1},
+        {Enum.KeyCode.ButtonX,     4},
+        {Enum.KeyCode.X,           1},
+        {Enum.KeyCode.ButtonX,     4},
+        {Enum.KeyCode.C,           1},
+        {Enum.KeyCode.ButtonX,     4},
+        {Enum.KeyCode.V,           1},
+    },
+    AutoReplay          = true,
+    AutoNext            = false,
+    AutoLeave           = false,
+    Webhook = {
+            Enable = true,
+            URL = "https://discord.com/api/webhooks/1323066038778069104/aw-JU7tPlGWcZMUQR08rMU9RhNgIY3eZnH7726xNwHC6_2g48pllg5FQORbNmQ9xkf6y"
+    },
+}
+
+loadstring(game:HttpGet("https://raw.githubusercontent.com/HOSTI1315/autoscript/refs/heads/main/SagaTestApiGConf.lua"))()

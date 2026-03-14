@@ -4,13 +4,14 @@ if g.SkrilyaHubLoaded then
 end
 g.SkrilyaHubLoaded = true
 
-print("ver. FanMirkaViebalSoakyAutoFarmallnigers")
+print("ver. 2")
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
+local VirtualUser = game:GetService("VirtualUser")
 
 -- executor HTTP helper (syn.request / http.request / request ...)
 local httprequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
@@ -76,6 +77,27 @@ Lighting.ChildAdded:Connect(function(child)
 		end)
 	end
 end)
+
+-- ============ ANTI-AFK ============
+local antiAFKActive = false
+local antiAFKIdledConn = nil
+
+local function enableAntiAFK()
+	if antiAFKActive then return end
+	antiAFKActive = true
+	antiAFKIdledConn = LocalPlayer.Idled:Connect(function()
+		VirtualUser:CaptureController()
+		VirtualUser:ClickButton2(Vector2.new())
+	end)
+end
+
+local function disableAntiAFK()
+	antiAFKActive = false
+	if antiAFKIdledConn then
+		antiAFKIdledConn:Disconnect()
+		antiAFKIdledConn = nil
+	end
+end
 
 -- ============ SHARED GAME DATA (CRAFTING / LEVELS / ITEMS) ============
 local Shared = RS:FindFirstChild("Shared")
@@ -513,19 +535,22 @@ local function rebuildEvoFarmFromConfig()
 		EvoFarm.DropIndex = buildDropIndex()
 	end
 
+	-- craftsTotal: 0 = infinite (фармим по 1 крафту), >0 = фармим все материалы на N крафтов сразу
+	local craftsTotalNum = tonumber(EvoFarm.Config and EvoFarm.Config.craftsTotal) or 1
+	local needMultiplier = (craftsTotalNum > 0) and craftsTotalNum or 1
+
 	-- отфильтровать только автофармовые материалы (есть дроп, нет Challenge)
 	local globalNeed = {}
 	for matName, count in pairs(baseNeed) do
 		if type(matName) == "string" and type(count) == "number" and count > 0 then
 			if isMaterialAutoFarmable(matName, EvoFarm.DropIndex) then
-				globalNeed[matName] = count
+				globalNeed[matName] = count * needMultiplier
 			end
 		end
 	end
 	EvoFarm.GlobalNeed = globalNeed
 
 	-- общий список: BaseNeed * craftsTotal (0 = infinite, нет общего списка)
-	local craftsTotalNum = tonumber(EvoFarm.Config and EvoFarm.Config.craftsTotal) or 1
 	local totalNeedMap = {}
 	if craftsTotalNum > 0 then
 		for matName, count in pairs(baseNeed) do
@@ -2001,6 +2026,16 @@ end
 local autoChallengesEnabled = false
 local autoRaidEnabled = false
 
+-- ---- Auto tab: Anti-AFK section ----
+do
+	local s = Tabs.Auto:AddSection("Anti-AFK", "user-check")
+	s:AddParagraph({ Title = "Anti-AFK", Content = "Prevents Roblox idle kick during long autofarm." })
+	s:AddToggle("AntiAFKToggle", { Title = "Enable Anti-AFK", Default = true }):OnChanged(function(v)
+		if v then enableAntiAFK() else disableAntiAFK() end
+	end)
+	enableAntiAFK()
+end
+
 -- ---- Auto tab: Auto Join section ----
 do
 	local s = Tabs.Auto:AddSection("Auto Join", "play")
@@ -2162,20 +2197,30 @@ do
 		local cfgTotal = tonumber(EvoFarm.Config and EvoFarm.Config.craftsTotal)
 		_G.EvoFarmCraftsTotal = (cfgTotal ~= nil and cfgTotal >= 0) and cfgTotal or 1
 	end
-	s:AddSlider("EvoFarm_CraftsTotal", {
+	local craftsSlider = s:AddSlider("EvoFarm_CraftsTotal", {
 		Title = "Crafts to farm",
 		Description = "How many crafts (0 = infinite)",
 		Min = 0,
 		Max = 999,
 		Default = _G.EvoFarmCraftsTotal,
 		Rounding = 1,
-	}):OnChanged(function(val)
+	})
+	local evoCraftsIgnoreSet = false
+	craftsSlider:OnChanged(function(val)
+		if evoCraftsIgnoreSet then return end
 		local intVal = math.max(0, math.floor(tonumber(val) or 1))
+		if intVal == _G.EvoFarmCraftsTotal then return end
 		_G.EvoFarmCraftsTotal = intVal
-		-- принудительно вернуть в слайдер целое значение
-		if Options and Options.EvoFarm_CraftsTotal and Options.EvoFarm_CraftsTotal.SetValue then
-			Options.EvoFarm_CraftsTotal:SetValue(intVal)
-		end
+		-- SetValue может вызвать OnChanged — task.defer разрывает синхронную рекурсию (stack overflow)
+		task.defer(function()
+			evoCraftsIgnoreSet = true
+			pcall(function()
+				if Options and Options.EvoFarm_CraftsTotal and Options.EvoFarm_CraftsTotal.SetValue then
+					Options.EvoFarm_CraftsTotal:SetValue(intVal)
+				end
+			end)
+			evoCraftsIgnoreSet = false
+		end)
 	end)
 
 	s:AddButton({
@@ -2549,6 +2594,7 @@ local function applyConfigState()
 		if opts.AutoLeave and opts.AutoLeave.Value then Game.SetAutoLeave(true) end
 		if opts.AutoVoteStart and opts.AutoVoteStart.Value then Game.SetAutoVoteStart(true) end
 		if opts.AutoSetMaxSpeed and opts.AutoSetMaxSpeed.Value then Game.SetAutoSetMaxSpeed(true) end
+		if opts.AntiAFKToggle and opts.AntiAFKToggle.Value then enableAntiAFK() else disableAntiAFK() end
 		if opts.AutoMerchantToggle and opts.AutoMerchantToggle.Value then
 			_G.AutoMerchantEnabled = true
 			_G.MerchantSelectedItems = {}

@@ -4,7 +4,7 @@ if g.SkrilyaHubLoaded then
 end
 g.SkrilyaHubLoaded = true
 
-print("ver. 2")
+print("ver. 3")
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -1103,6 +1103,14 @@ local function getStageKeyFromStep(step)
 	return tostring(step.mode) .. "_" .. tostring(step.world) .. "_" .. tostring(step.chapter)
 end
 
+local function isCurrentStageSameAsStep(step)
+	local current = getCurrentStageForEvo()
+	if not current or not step then return false end
+	-- Values.Game: World, Level; step: world, chapter
+	return (tostring(current.world) == tostring(step.world)) and
+	       (tostring(current.levelKey) == tostring(step.chapter))
+end
+
 local function isEvoStageCycleComplete()
 	for _, step in ipairs(EvoFarm.StageRoute or {}) do
 		local key = getStageKeyFromStep(step)
@@ -1204,9 +1212,20 @@ local function connectEvoRewardsCallback(rewardsUI)
 				useful = isStageStillUsefulForEvo(step.world, step.chapter)
 			end
 
-			if useful then
-				-- остаёмся на карте
+			local onCorrectMap = isCurrentStageSameAsStep(step)
+			if useful and onCorrectMap then
+				-- We're on the expected map; retry is safe
 				Game.VoteRetry()
+				return
+			end
+			if useful and not onCorrectMap then
+				-- Route changed mid-match; we're on wrong map — go to correct one
+				Game.LeaveRoom()
+				task.spawn(function()
+					task.wait(1)
+					if not evoAutofarmEnabled then return end
+					enterEvoStage(step)
+				end)
 				return
 			end
 

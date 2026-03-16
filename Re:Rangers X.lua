@@ -1,10 +1,13 @@
+-- true = разрешить повторный инжект (обход защиты от дублей)
+local ALLOW_REINJECT = true
+
 local g = getgenv and getgenv() or _G
-if g.SkrilyaHubLoaded then
+if g.SkrilyaHubLoaded and not ALLOW_REINJECT then
 	return
 end
-g.SkrilyaHubLoaded = true
+g.SkrilyaHubLoaded = false
 
-print("ver. 3")
+print("ver. FanMirkaViebalSoakyAutoFarmallnigers")
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -644,6 +647,14 @@ local function getRemote()
 		Raid_Shop = wfc(wfc(Server, "Gameplay"), "Raid_Shop"),
 		JJK_RaidShop = wfc(wfc(Server, "Gameplay"), "JJK_RaidShop"),
 		Calamity_Shop = wfc(wfc(Server, "Gameplay"), "Calamity_Shop"),
+		RaidCSW_Shop = wfc(wfc(Server, "Gameplay"), "RaidCSW_Shop"),
+		BossRushExchange = wfc(wfc(Server, "Gameplay"), "BossRushExchange"),
+		RiftStormExchange = wfc(wfc(Server, "Gameplay"), "RiftStormExchange"),
+		FallShopExchange = wfc(wfc(Server, "Gameplay"), "FallShopExchange"),
+		RaidOverlord_Shop = wfc(wfc(Server, "Gameplay"), "RaidOverlord_Shop"),
+		Halloween_Shop = wfc(wfc(Server, "Gameplay"), "Halloween_Shop"),
+		ShadowRaidShop = wfc(wfc(Server, "Gameplay"), "Shadow Raid Shop"),
+		GhoulHuntExchange = wfc(wfc(Server, "Gameplay"), "GhoulHuntExchange"),
 		UnitsGacha = wfc(wfc(Server, "Gambling"), "UnitsGacha"),
 		SelectRateUpBanner = wfc(wfc(Server, "Gambling"), "SelectRateUpBanner"),
 		RerollTrait = wfc(wfc(Server, "Gambling"), "RerollTrait"),
@@ -1472,7 +1483,7 @@ function Game.SetAutoJoin(enabled, filter)
 			if not autoJoinEnabled then break end
 			if not isInLobby() then task.wait(2) continue end
 			local mode = autoJoinFilter.mode
-			if mode == "Fate" then
+			if mode == "Ghoul Hunt" then
 				Game.EnterMode("Fate Mode", true)
 				task.wait(5)
 			else
@@ -1668,6 +1679,62 @@ function Game.TryOpenCalamityShop()
 	return false
 end
 
+function Game.TryOpenRaidCSWShop()
+	local gui = LocalPlayer:FindFirstChild("PlayerGui")
+	local s = gui and gui:FindFirstChild("RaidCSW_Shop")
+	if s then s.Enabled = true return true end
+	return false
+end
+
+function Game.TryOpenBossRushExchange()
+	local gui = LocalPlayer:FindFirstChild("PlayerGui")
+	local s = gui and gui:FindFirstChild("BossRushExchange")
+	if s then s.Enabled = true return true end
+	return false
+end
+
+function Game.TryOpenRiftStormExchange()
+	local gui = LocalPlayer:FindFirstChild("PlayerGui")
+	local s = gui and gui:FindFirstChild("RiftStormExchange")
+	if s then s.Enabled = true return true end
+	return false
+end
+
+function Game.TryOpenFallShopExchange()
+	local gui = LocalPlayer:FindFirstChild("PlayerGui")
+	local s = gui and gui:FindFirstChild("FallShopExchange")
+	if s then s.Enabled = true return true end
+	return false
+end
+
+function Game.TryOpenRaidOverlordShop()
+	local gui = LocalPlayer:FindFirstChild("PlayerGui")
+	local s = gui and gui:FindFirstChild("RaidOverlord_Shop")
+	if s then s.Enabled = true return true end
+	return false
+end
+
+function Game.TryOpenHalloweenShop()
+	local gui = LocalPlayer:FindFirstChild("PlayerGui")
+	local s = gui and gui:FindFirstChild("Halloween_Shop")
+	if s then s.Enabled = true return true end
+	return false
+end
+
+function Game.TryOpenShadowRaidShop()
+	local gui = LocalPlayer:FindFirstChild("PlayerGui")
+	local s = gui and gui:FindFirstChild("Shadow Raid Shop")
+	if s then s.Enabled = true return true end
+	return false
+end
+
+function Game.TryOpenGhoulHuntExchange()
+	local gui = LocalPlayer:FindFirstChild("PlayerGui")
+	local s = gui and gui:FindFirstChild("GhoulHuntExchange")
+	if s then s.Enabled = true return true end
+	return false
+end
+
 -- Открыть Traits с выбранным юнитом (unitFolder из Collection). По дампу: Traits.Enabled + UnitFolder.Value
 function Game.OpenTraitsUI(unitFolder)
 	local gui = LocalPlayer:FindFirstChild("PlayerGui")
@@ -1710,6 +1777,38 @@ function Game.BuyCalamityShopItem(itemName, amount)
 	getRemote().Calamity_Shop:FireServer(itemName, amount or 1)
 end
 
+function Game.BuyRaidCSWShopItem(itemName, amount)
+	getRemote().RaidCSW_Shop:FireServer(itemName, amount or 1)
+end
+
+function Game.BuyBossRushExchangeItem(itemName, amount)
+	getRemote().BossRushExchange:FireServer(itemName, amount or 1)
+end
+
+function Game.BuyRiftStormExchangeItem(itemName, amount)
+	getRemote().RiftStormExchange:FireServer(itemName, amount or 1)
+end
+
+function Game.BuyFallShopExchangeItem(itemName, amount)
+	getRemote().FallShopExchange:FireServer(itemName, amount or 1)
+end
+
+function Game.BuyRaidOverlordShopItem(itemName, amount)
+	getRemote().RaidOverlord_Shop:FireServer(itemName, amount or 1)
+end
+
+function Game.BuyHalloweenShopItem(itemName, amount)
+	getRemote().Halloween_Shop:FireServer(itemName, amount or 1)
+end
+
+function Game.BuyShadowRaidShopItem(itemName, amount)
+	getRemote().ShadowRaidShop:FireServer(itemName, amount or 1)
+end
+
+function Game.BuyGhoulHuntExchangeItem(itemName, amount)
+	getRemote().GhoulHuntExchange:FireServer(itemName, amount or 1)
+end
+
 function Game.SelectBanner(bannerId)
 	getRemote().SelectRateUpBanner:FireServer(bannerId)
 end
@@ -1717,6 +1816,14 @@ end
 -- UnitsGacha:FireServer("10x"|"1x", "Standard"|bannerName, { Rare = true, Epic = true } for delete rarities)
 function Game.Summon(count, bannerName, deleteRaritiesTable)
 	getRemote().UnitsGacha:FireServer(count or "1x", bannerName or "Standard", deleteRaritiesTable or {})
+	-- Кликер для пропуска анимации суммона (L1 как на геймпаде)
+	task.defer(function()
+		local VIM = game:GetService("VirtualInputManager")
+		local keyCode = Enum.KeyCode.ButtonL1
+		VIM:SendKeyEvent(true, keyCode, false, nil)
+		task.wait(0.03)
+		VIM:SendKeyEvent(false, keyCode, false, nil)
+	end)
 end
 
 function Game.SellLastUnit()
@@ -2024,41 +2131,43 @@ Shop = Window:AddTab({ Title = "Shop", Icon = "shopping-cart" }),
 local Options = Fluent.Options
 
 -- ---- Constants ----
-local MODES = { "Fate", "Story", "Ranger Stage", "Raids Stage", "Infinite Stage" }
+local MODES = { "Ghoul Hunt", "Story", "Ranger Stage", "Raids Stage", "Misc Stage" }
 local WORLDS = { "Namek", "Naruto", "OnePiece", "SAO", "TokyoGhoul", "Dungeon", "BattleArena", "KurumiBossEvent", "JJK", "Calamity" }
 local DIFFICULTIES = { "Normal", "Hard", "Easy" }
 local CHAPTERS = { "Chapter 1", "Chapter 2", "Chapter 3", "Chapter 4", "Chapter 5" }
 local RAID_WORLDS = { "JJKRaid" }
 local RAID_CHAPTERS = { "JJK_Raid_Chapter1", "JJK_Raid_Chapter2" }
+local MISC_WORLDS = { "Calamity" }
+local MISC_CHAPTERS = { "Shibua Incident", "Great Cataclysm" }
+local MISC_CHAPTER_TO_INTERNAL = { ["Shibua Incident"] = "Calamity_Chapter1", ["Great Cataclysm"] = "Calamity_Chapter2" }
+
+local function getChapterInternalValue(mode, displayValue)
+	if mode == "Misc Stage" and MISC_CHAPTER_TO_INTERNAL[displayValue] then
+		return MISC_CHAPTER_TO_INTERNAL[displayValue]
+	end
+	return displayValue
+end
 
 local function getWorldOptionsForMode(mode)
-	if mode == "Fate" then return { "—" } end
+	if mode == "Ghoul Hunt" then return { "—" } end
 	if mode == "Raids Stage" then return RAID_WORLDS end
+	if mode == "Misc Stage" then return MISC_WORLDS end
 	return WORLDS
 end
 local function getChapterOptionsForMode(mode)
-	if mode == "Fate" then return { "—" } end
+	if mode == "Ghoul Hunt" then return { "—" } end
 	if mode == "Raids Stage" then return RAID_CHAPTERS end
+	if mode == "Misc Stage" then return MISC_CHAPTERS end
 	return CHAPTERS
 end
 
 local autoChallengesEnabled = false
 local autoRaidEnabled = false
 
--- ---- Auto tab: Anti-AFK section ----
-do
-	local s = Tabs.Auto:AddSection("Anti-AFK", "user-check")
-	s:AddParagraph({ Title = "Anti-AFK", Content = "Prevents Roblox idle kick during long autofarm." })
-	s:AddToggle("AntiAFKToggle", { Title = "Enable Anti-AFK", Default = true }):OnChanged(function(v)
-		if v then enableAntiAFK() else disableAntiAFK() end
-	end)
-	enableAntiAFK()
-end
-
 -- ---- Auto tab: Auto Join section ----
 do
 	local s = Tabs.Auto:AddSection("Auto Join", "play")
-	s:AddParagraph({ Title = "Auto Join", Content = "Fate / Raid / Story — при смене Mode меняются World и Chapter." })
+	s:AddParagraph({ Title = "Auto Join", Content = "Ghoul Hunt / Raid / Story — при смене Mode меняются World и Chapter." })
 	local ModeDropdown = s:AddDropdown("AutoMode", { Title = "Mode", Values = MODES, Multi = false, Default = "Story" })
 	ModeDropdown:OnChanged(function(v)
 		autoJoinFilter.mode = v
@@ -2068,12 +2177,17 @@ do
 		if Options.AutoChapter and Options.AutoChapter.SetValues then Options.AutoChapter:SetValues(chapters) Options.AutoChapter:SetValue(chapters[1]) end
 	end)
 	s:AddDropdown("AutoWorld", { Title = "World (Story/Raid)", Values = WORLDS, Multi = false, Default = "Namek" }):OnChanged(function(v) autoJoinFilter.world = (v ~= "—") and v or nil end)
-	s:AddDropdown("AutoChapter", { Title = "Chapter (Story/Raid)", Values = CHAPTERS, Multi = false, Default = "Chapter 1" }):OnChanged(function(v) autoJoinFilter.chapter = (v ~= "—") and v or nil end)
+	s:AddDropdown("AutoChapter", { Title = "Chapter (Story/Raid)", Values = CHAPTERS, Multi = false, Default = "Chapter 1" }):OnChanged(function(v)
+		local mode = Options.AutoMode and Options.AutoMode.Value
+		local internal = getChapterInternalValue(mode, v)
+		autoJoinFilter.chapter = (internal ~= "—") and internal or nil
+	end)
 	s:AddDropdown("AutoDiff", { Title = "Difficulty", Values = DIFFICULTIES, Multi = false, Default = "Normal" }):OnChanged(function(v) autoJoinFilter.difficulty = v end)
 	s:AddToggle("AutoJoinToggle", { Title = "Enable Auto Join", Default = false }):OnChanged(function(enabled)
 		autoJoinFilter.mode = Options.AutoMode.Value or "Story"
 		autoJoinFilter.world = Options.AutoWorld.Value
-		autoJoinFilter.chapter = Options.AutoChapter.Value
+		local mode = Options.AutoMode.Value or "Story"
+		autoJoinFilter.chapter = getChapterInternalValue(mode, Options.AutoChapter.Value)
 		autoJoinFilter.difficulty = Options.AutoDiff.Value or "Normal"
 		if autoJoinFilter.world == "—" then autoJoinFilter.world = nil end
 		if autoJoinFilter.chapter == "—" then autoJoinFilter.chapter = nil end
@@ -2091,14 +2205,14 @@ do
 		task.spawn(function()
 			while autoChallengesEnabled do
 				if not isInLobby() then task.wait(2) continue end
-				if Options.AutoMode.Value == "Fate" then
+				if Options.AutoMode.Value == "Ghoul Hunt" then
 					Game.EnterMode("Fate Mode", true)
 				else
 					Game.CreateChallengeRoom()
 					task.wait(0.5)
 					Game.SetRoomMode(Options.AutoMode.Value or "Story")
 					Game.SetRoomWorld(Options.AutoWorld.Value)
-					Game.SetRoomChapter(Options.AutoChapter.Value)
+					Game.SetRoomChapter(getChapterInternalValue(Options.AutoMode.Value or "Story", Options.AutoChapter.Value))
 					Game.SetRoomDifficulty(Options.AutoDiff.Value)
 					task.wait(0.3)
 					Game.SubmitRoom()
@@ -2341,12 +2455,72 @@ end
 
 -- ---- Shop tab ----
 local RARITIES = { "Rare", "Epic", "Legendary", "Mythic", "Secret" }
-local BANNERS = { "Standard", "Rateup" }
+local BANNERS = { "Standard", "Rateup", "Sol" }
 -- Постоянный список айтемов магазина (не сбрасывается)
 local MERCHANT_ITEMS = { "Cursed Finger", "Dr. Megga Punk", "Green Bean", "Onigiri", "Perfect Stats Key", "Ramen", "Ranger Crystal", "Rubber Fruit", "Soul Fragments", "Stat Boosters", "Stats Key", "Trait Reroll" }
 local merchantItems = table.clone(MERCHANT_ITEMS)
 _G.MerchantSelectedItems = {}
 _G.DeleteRarities = {}
+
+do
+	local s = Tabs.Shop:AddSection("Auto Summon", "sparkles")
+	s:AddParagraph({ Title = "Auto Summon", Content = "Select banner, rarities to delete, enable for 10x loop. L1 clicker skips summon animation." })
+	s:AddButton({ Title = "Refresh Banners", Description = "Try to load banners from game (CurrentBanners / UnitsGacha)", Callback = function()
+		local found = {}
+		pcall(function()
+			local Info = RS:FindFirstChild("Shared") and RS.Shared:FindFirstChild("Info")
+			local cb = Info and Info:FindFirstChild("CurrentBanners")
+			if cb and cb:IsA("ModuleScript") then
+				local ok, mod = pcall(require, cb)
+				if ok and type(mod) == "table" then
+					for k, v in pairs(mod) do
+						if type(k) == "string" and #k > 1 then table.insert(found, k) end
+					end
+				end
+			end
+		end)
+		pcall(function()
+			local ug = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("UnitsGacha")
+			if ug then
+				for _, child in ipairs(ug:GetDescendants()) do
+					if child.Name:match("Banner") and child:IsA("Frame") or child:IsA("TextButton") then
+						local name = child:FindFirstChild("BannerName") or child:FindFirstChild("Name")
+						if name and name:IsA("StringValue") and name.Value and #name.Value > 0 then
+							if not table.find(found, name.Value) then table.insert(found, name.Value) end
+						end
+					end
+				end
+			end
+		end)
+		if #found > 0 then
+			table.sort(found)
+			for i, b in ipairs(found) do if not table.find(BANNERS, b) then table.insert(BANNERS, b) end end
+			if Options.BannerSelect and Options.BannerSelect.SetValues then Options.BannerSelect:SetValues(BANNERS) end
+			Fluent:Notify({ Title = "Banners", Content = "Loaded " .. #found .. " banners: " .. table.concat(found, ", "), Duration = 4 })
+		else
+			Fluent:Notify({ Title = "Banners", Content = "Auto-detect failed. Banners are hardcoded — add new ones manually.", Duration = 4 })
+		end
+		print("[SkrilyaHub] Автопоиск баннеров: можно через require(CurrentBanners) или скан UnitsGacha UI, но модуль часто пустой. Добавляй новые баннеры вручную в BANNERS.")
+	end })
+	s:AddDropdown("BannerSelect", { Title = "Banner", Values = BANNERS, Multi = false, Default = "Standard" }):OnChanged(function(v) _G.SelectedBanner = v end)
+	s:AddDropdown("DeleteRarities", { Title = "Delete Rarities", Description = "Auto-sell these rarities after pull", Values = RARITIES, Multi = true, Default = {} }):OnChanged(function(val)
+		local arr = {}
+		for k, v in next, val or {} do if v then table.insert(arr, k) end end
+		_G.DeleteRarities = arr
+	end)
+	s:AddToggle("AutoSummonToggle", { Title = "Enable Auto Summon", Default = false }):OnChanged(function(enabled)
+		_G.AutoSummonEnabled = enabled
+		if not enabled then return end
+		task.spawn(function()
+			while _G.AutoSummonEnabled do
+				local deleteTbl = {}
+				for _, r in ipairs(_G.DeleteRarities or {}) do deleteTbl[r] = true end
+				Game.Summon("10x", _G.SelectedBanner or "Standard", deleteTbl)
+				task.wait(1.5)
+			end
+		end)
+	end)
+end
 
 do
 	local s = Tabs.Shop:AddSection("Auto Merchant", "shopping-cart")
@@ -2415,9 +2589,19 @@ end
 local RAID_SHOP_ITEMS = { "Cursed Finger", "Corpse Rib Cage", "Gyro's Steel Ball", "Dr. Megga Punk", "Stats Key", "Soul Fragments", "Gourmet Meal", "Trait Reroll", "Perfect Stats Key" }
 local JJK_RAID_SHOP_ITEMS = { "Soul Fragments", "Perfect Stats Key", "Cursed Finger", "Gorodo", "King's Shrine", "Trait Reroll", "Dr. Megga Punk", "Stats Key" }
 local CALAMITY_SHOP_ITEMS = { "Strongest Seal", "Cursed Finger", "Stats Key", "Perfect Stats Key", "Cursed Ring", "Soul Fragments", "Trait Reroll", "Dr. Megga Punk" }
+local BOSS_RUSH_ITEMS = { "Zangets", "Dr. Megga Punk", "Shinji", "Perfect Stats Key", "Soul Fragments", "Trait Reroll", "Stats Key" }
+local GENERIC_SHOP_ITEMS = { "Cursed Finger", "Stats Key", "Soul Fragments", "Trait Reroll", "Dr. Megga Punk", "Perfect Stats Key" }
 _G.RaidShopSelectedItems = {}
 _G.JJKRaidShopSelectedItems = {}
 _G.CalamityShopSelectedItems = {}
+_G.RaidCSWShopSelectedItems = {}
+_G.BossRushExchangeSelectedItems = {}
+_G.RiftStormExchangeSelectedItems = {}
+_G.FallShopExchangeSelectedItems = {}
+_G.RaidOverlordShopSelectedItems = {}
+_G.HalloweenShopSelectedItems = {}
+_G.ShadowRaidShopSelectedItems = {}
+_G.GhoulHuntExchangeSelectedItems = {}
 
 local function buildShopSection(shopKey, shopFolderName, itemsList, selectedKey, buyFunc, title, desc)
 	local s = Tabs.Shop:AddSection(title, "shopping-bag")
@@ -2465,32 +2649,14 @@ end
 buildShopSection("RaidShop", "Raid_Shop", RAID_SHOP_ITEMS, "RaidShopSelectedItems", Game.BuyRaidShopItem, "Auto Raid Shop", "Raid Currency. Select items, enable to buy max.")
 buildShopSection("JJKRaidShop", "JJK_Raid_Shop", JJK_RAID_SHOP_ITEMS, "JJKRaidShopSelectedItems", Game.BuyJJKRaidShopItem, "Auto JJK Raid Shop", "Cursed Scrolls. Select items, enable to buy max.")
 buildShopSection("CalamityShop", "Calamity_Shop", CALAMITY_SHOP_ITEMS, "CalamityShopSelectedItems", Game.BuyCalamityShopItem, "Auto Calamity Shop", "Cursed Essence. Select items, enable to buy max.")
-
-do
-	local s = Tabs.Shop:AddSection("Auto Summon", "sparkles")
-	s:AddParagraph({ Title = "Auto Summon", Content = "Select banner, rarities to delete, enable for 10x loop." })
-	s:AddButton({ Title = "Refresh Banners", Description = "Load banners", Callback = function()
-		Fluent:Notify({ Title = "Banners", Content = "Banners refreshed", Duration = 2 })
-	end })
-	s:AddDropdown("BannerSelect", { Title = "Banner", Values = BANNERS, Multi = false, Default = "Standard" }):OnChanged(function(v) _G.SelectedBanner = v end)
-	s:AddDropdown("DeleteRarities", { Title = "Delete Rarities", Description = "Auto-sell these rarities after pull", Values = RARITIES, Multi = true, Default = {} }):OnChanged(function(val)
-		local arr = {}
-		for k, v in next, val or {} do if v then table.insert(arr, k) end end
-		_G.DeleteRarities = arr
-	end)
-	s:AddToggle("AutoSummonToggle", { Title = "Enable Auto Summon", Default = false }):OnChanged(function(enabled)
-		_G.AutoSummonEnabled = enabled
-		if not enabled then return end
-		task.spawn(function()
-			while _G.AutoSummonEnabled do
-				local deleteTbl = {}
-				for _, r in ipairs(_G.DeleteRarities or {}) do deleteTbl[r] = true end
-				Game.Summon("10x", _G.SelectedBanner or "Standard", deleteTbl)
-				task.wait(1.5)
-			end
-		end)
-	end)
-end
+buildShopSection("RaidCSWShop", "RaidCSW_Shop", GENERIC_SHOP_ITEMS, "RaidCSWShopSelectedItems", Game.BuyRaidCSWShopItem, "Auto Raid CSW Shop", "Raid CSW currency. Select items, enable to buy max.")
+buildShopSection("BossRushExchange", "BossRushExchange", BOSS_RUSH_ITEMS, "BossRushExchangeSelectedItems", Game.BuyBossRushExchangeItem, "Auto Boss Rush Exchange", "Boss Rush tokens. Select items, enable to buy max.")
+buildShopSection("RiftStormExchange", "RiftStormExchange", GENERIC_SHOP_ITEMS, "RiftStormExchangeSelectedItems", Game.BuyRiftStormExchangeItem, "Auto Rift Storm Exchange", "Rift Storm currency. Select items, enable to buy max.")
+buildShopSection("FallShopExchange", "FallShopExchange", GENERIC_SHOP_ITEMS, "FallShopExchangeSelectedItems", Game.BuyFallShopExchangeItem, "Auto Fall Shop Exchange", "Fall event currency. Select items, enable to buy max.")
+buildShopSection("RaidOverlordShop", "RaidOverlord_Shop", GENERIC_SHOP_ITEMS, "RaidOverlordShopSelectedItems", Game.BuyRaidOverlordShopItem, "Auto Raid Overlord Shop", "Raid Overlord currency. Select items, enable to buy max.")
+buildShopSection("HalloweenShop", "Halloween_Shop", GENERIC_SHOP_ITEMS, "HalloweenShopSelectedItems", Game.BuyHalloweenShopItem, "Auto Halloween Shop", "Halloween event currency. Select items, enable to buy max.")
+buildShopSection("ShadowRaidShop", "Shadow Raid Shop", GENERIC_SHOP_ITEMS, "ShadowRaidShopSelectedItems", Game.BuyShadowRaidShopItem, "Auto Shadow Raid Shop", "Shadow Raid currency. Select items, enable to buy max.")
+buildShopSection("GhoulHuntExchange", "GhoulHunt", GENERIC_SHOP_ITEMS, "GhoulHuntExchangeSelectedItems", Game.BuyGhoulHuntExchangeItem, "Auto Ghoul Hunt Exchange", "Ghoul Hunt RC Cells. Select items, enable to buy max.")
 
 -- ---- Webhook tab ----
 do
@@ -2502,6 +2668,33 @@ do
 	s:AddButton({ Title = "Send Test Message", Description = "Send a test message", Callback = function()
 		Game.SendWebhookMessage("SkrilyaHub - Test message")
 		Fluent:Notify({ Title = "Webhook", Content = "Test sent", Duration = 2 })
+	end })
+end
+
+-- ---- Misc: Anti-AFK ----
+do
+	local s = Tabs.Misc:AddSection("Anti-AFK", "user-check")
+	s:AddParagraph({ Title = "Anti-AFK", Content = "Prevents Roblox idle kick during long autofarm." })
+	s:AddToggle("AntiAFKToggle", { Title = "Enable Anti-AFK", Default = true }):OnChanged(function(v)
+		if v then enableAntiAFK() else disableAntiAFK() end
+	end)
+	enableAntiAFK()
+end
+
+-- ---- Misc: Shiny Normalize ----
+do
+	local s = Tabs.Misc:AddSection("Shiny Normalize", "sparkles")
+	s:AddParagraph({ Title = "Shiny Normalize", Content = "Opens Collection in ShinyNormalize mode. Select a Shiny unit to open the normalize UI (convert Shiny to normal for rewards)." })
+	s:AddButton({ Title = "Open Shiny Normalize UI", Description = "Open Collection in ShinyNormalize mode", Callback = function()
+		local gui = LocalPlayer:FindFirstChild("PlayerGui")
+		if not gui then Fluent:Notify({ Title = "Shiny Normalize", Content = "PlayerGui not found", Duration = 2 }) return end
+		local collection = gui:FindFirstChild("Collection")
+		if not collection then Fluent:Notify({ Title = "Shiny Normalize", Content = "Collection not found", Duration = 2 }) return end
+		local mode = collection:FindFirstChild("Mode")
+		if not mode or not mode:IsA("StringValue") then Fluent:Notify({ Title = "Shiny Normalize", Content = "Collection.Mode not found", Duration = 2 }) return end
+		mode.Value = "ShinyNormalize"
+		collection.Enabled = true
+		Fluent:Notify({ Title = "Shiny Normalize", Content = "Collection opened. Select a Shiny unit.", Duration = 3 })
 	end })
 end
 
@@ -2558,7 +2751,7 @@ local function applyConfigState()
 		if opts.AutoJoinToggle and opts.AutoJoinToggle.Value then
 			autoJoinFilter.mode = mode
 			autoJoinFilter.world = opts.AutoWorld and opts.AutoWorld.Value
-			autoJoinFilter.chapter = opts.AutoChapter and opts.AutoChapter.Value
+			autoJoinFilter.chapter = getChapterInternalValue(mode, opts.AutoChapter and opts.AutoChapter.Value)
 			autoJoinFilter.difficulty = (opts.AutoDiff and opts.AutoDiff.Value) or "Normal"
 			if autoJoinFilter.world == "—" then autoJoinFilter.world = nil end
 			if autoJoinFilter.chapter == "—" then autoJoinFilter.chapter = nil end
@@ -2569,13 +2762,14 @@ local function applyConfigState()
 			task.spawn(function()
 				while autoChallengesEnabled do
 					if not isInLobby() then task.wait(2) continue end
-					if (opts.AutoMode and opts.AutoMode.Value) == "Fate" then Game.EnterMode("Fate Mode", true)
+					if (opts.AutoMode and opts.AutoMode.Value) == "Ghoul Hunt" then Game.EnterMode("Fate Mode", true)
 					else
 						Game.CreateChallengeRoom()
 						task.wait(0.5)
-						Game.SetRoomMode(opts.AutoMode and opts.AutoMode.Value or "Story")
+						local mode = opts.AutoMode and opts.AutoMode.Value or "Story"
+						Game.SetRoomMode(mode)
 						Game.SetRoomWorld(opts.AutoWorld and opts.AutoWorld.Value)
-						Game.SetRoomChapter(opts.AutoChapter and opts.AutoChapter.Value)
+						Game.SetRoomChapter(getChapterInternalValue(mode, opts.AutoChapter and opts.AutoChapter.Value))
 						Game.SetRoomDifficulty(opts.AutoDiff and opts.AutoDiff.Value)
 						task.wait(0.3)
 						Game.SubmitRoom()
@@ -2709,6 +2903,45 @@ local function applyConfigState()
 					task.wait(1)
 				end
 			end)
+		end
+		for _, shop in ipairs({
+			{"RaidCSWShop", "RaidCSW_Shop", "RaidCSWShopSelectedItems", Game.BuyRaidCSWShopItem},
+			{"BossRushExchange", "BossRushExchange", "BossRushExchangeSelectedItems", Game.BuyBossRushExchangeItem},
+			{"RiftStormExchange", "RiftStormExchange", "RiftStormExchangeSelectedItems", Game.BuyRiftStormExchangeItem},
+			{"FallShopExchange", "FallShopExchange", "FallShopExchangeSelectedItems", Game.BuyFallShopExchangeItem},
+			{"RaidOverlordShop", "RaidOverlord_Shop", "RaidOverlordShopSelectedItems", Game.BuyRaidOverlordShopItem},
+			{"HalloweenShop", "Halloween_Shop", "HalloweenShopSelectedItems", Game.BuyHalloweenShopItem},
+			{"ShadowRaidShop", "Shadow Raid Shop", "ShadowRaidShopSelectedItems", Game.BuyShadowRaidShopItem},
+			{"GhoulHuntExchange", "GhoulHunt", "GhoulHuntExchangeSelectedItems", Game.BuyGhoulHuntExchangeItem},
+		}) do
+			local toggleName, folderName, selectedKey, buyFunc = shop[1], shop[2], shop[3], shop[4]
+			local opt = opts["Auto" .. toggleName .. "Toggle"]
+			if opt and opt.Value then
+				_G["Auto" .. toggleName .. "Toggle"] = true
+				_G[selectedKey] = {}
+				local itemsOpt = opts[toggleName .. "Items"]
+				if itemsOpt and itemsOpt.Value then
+					for k, v in next, itemsOpt.Value do if v then table.insert(_G[selectedKey], k) end end
+				end
+				task.spawn(function()
+					while _G["Auto" .. toggleName .. "Toggle"] do
+						local pd = Game.GetPlayerData()
+						local shopFolder = pd and pd:FindFirstChild(folderName)
+						if shopFolder then
+							for _, itemName in ipairs(_G[selectedKey] or {}) do
+								local item = shopFolder:FindFirstChild(itemName)
+								if item and item:FindFirstChild("Quantity") then
+									local qMaxNum = tonumber(item.Quantity.Value) or 999
+									local bought = (item:FindFirstChild("BuyAmount") and tonumber(item.BuyAmount.Value)) or 0
+									local q = math.max(0, qMaxNum - bought)
+									if q > 0 then buyFunc(itemName, q) end
+								end
+							end
+						end
+						task.wait(1)
+					end
+				end)
+			end
 		end
 		if opts.AutoSummonToggle and opts.AutoSummonToggle.Value then
 			_G.AutoSummonEnabled = true

@@ -5,7 +5,7 @@ local g = getgenv and getgenv() or _G
 if g.SkrilyaHubLoaded and not ALLOW_REINJECT then
 	return
 end
-g.SkrilyaHubLoaded = false
+g.SkrilyaHubLoaded = true
 
 print("ver. FanMirkaViebalSoakyAutoFarmallnigers")
 
@@ -1749,6 +1749,39 @@ function Game.OpenTraitsUI(unitFolder)
 	return true
 end
 
+-- Количество предмета: Items[item].Amount или Data[item].Value (валюты типа Sol Token)
+function Game.GetItemCount(itemName, plr)
+	if not itemName or #itemName < 1 then return nil end
+	plr = plr or LocalPlayer
+	local pd = Game.GetPlayerData(plr)
+	if not pd then return nil end
+	local variants = { itemName, itemName:gsub("s$", ""), itemName:gsub(" ", ""), itemName:gsub("s$", ""):gsub(" ", "") }
+	-- 1) Items: Items[itemName].Amount.Value
+	local items = pd:FindFirstChild("Items")
+	if items then
+		for _, v in ipairs(variants) do
+			local item = items:FindFirstChild(v)
+			if item then
+				local amount = item:FindFirstChild("Amount")
+				if amount and amount:IsA("ValueBase") then
+					return tonumber(amount.Value)
+				end
+			end
+		end
+	end
+	-- 2) Data: Data[itemName].Value (валюты: Sol Token, Gem и т.д.)
+	local data = pd:FindFirstChild("Data")
+	if data then
+		for _, v in ipairs(variants) do
+			local val = data:FindFirstChild(v)
+			if val and val:IsA("ValueBase") then
+				return tonumber(val.Value)
+			end
+		end
+	end
+	return nil
+end
+
 -- Открыть Collection (опционально режим Mode). Для Traits с юнитом лучше OpenTraitsUI(unitFolder).
 function Game.OpenCollection(mode)
 	local gui = LocalPlayer:FindFirstChild("PlayerGui")
@@ -1821,7 +1854,7 @@ function Game.Summon(count, bannerName, deleteRaritiesTable)
 		local VIM = game:GetService("VirtualInputManager")
 		local keyCode = Enum.KeyCode.ButtonL1
 		VIM:SendKeyEvent(true, keyCode, false, nil)
-		task.wait(0.03)
+		task.wait(0.001)
 		VIM:SendKeyEvent(false, keyCode, false, nil)
 	end)
 end
@@ -2028,7 +2061,9 @@ function Game.SetWebhook(enabled, url)
 								if nameLabel and amountLabel and nameLabel:IsA("TextLabel") and amountLabel:IsA("TextLabel") then
 									local txt = nameLabel.Text or "?"
 									local amt = amountLabel.Text or "?"
-									table.insert(rewardParts, string.format("• %s × %s", txt, amt))
+									local total = Game.GetItemCount(txt)
+									local suffix = (total ~= nil) and (" (" .. tostring(total) .. ")") or ""
+									table.insert(rewardParts, string.format("• %s × %s%s", txt, amt, suffix))
 									if not hasSecretDrop then
 										if (txt and (txt:lower():find("secret") or txt:find("%[Secret%]"))) or (child.Name and SECRET_UNIT_NAMES[child.Name]) then
 											hasSecretDrop = true

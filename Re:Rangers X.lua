@@ -7,7 +7,7 @@ if g.SkrilyaHubLoaded and not ALLOW_REINJECT then
 end
 g.SkrilyaHubLoaded = true
 
-print("ver. FanMirkaViebalSoakyAutoFarmallnigers")
+print("ver. LOHgarika")
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -2819,7 +2819,7 @@ do
 			startAutoQuestLoop()
 		end
 	end)
-	s:AddSlider("AutoQuestInterval", { Title = "Interval (sec)", Min = 3, Max = 60, Default = 5 }):OnChanged(function(v)
+	s:AddSlider("AutoQuestInterval", { Title = "Interval (sec)", Min = 3, Max = 60, Default = 5, Rounding = 1 }):OnChanged(function(v)
 		_G.AutoQuestInterval = v
 		if _G.AutoQuestEnabled then startAutoQuestLoop() end
 	end)

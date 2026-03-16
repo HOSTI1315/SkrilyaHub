@@ -643,6 +643,7 @@ local function getRemote()
 		ClaimBp = wfc(wfc(R, "Events"), "ClaimBp"),
 		EventClaimBp = wfc(wfc(R, "Events"), "EventClaimBp"),
 		SettingEvent = wfc(wfc(Server, "Settings"), "Setting_Event"),
+		QuestEvent = wfc(wfc(Server, "Gameplay"), "QuestEvent"),
 		Merchant = wfc(wfc(Server, "Gameplay"), "Merchant"),
 		Raid_Shop = wfc(wfc(Server, "Gameplay"), "Raid_Shop"),
 		JJK_RaidShop = wfc(wfc(Server, "Gameplay"), "JJK_RaidShop"),
@@ -1634,6 +1635,18 @@ end
 
 function Game.ClaimEventBattlepassAll()
 	getRemote().EventClaimBp:FireServer("Claim All")
+end
+
+function Game.ClaimAllDailyQuests(useClaimAll)
+	useClaimAll = useClaimAll ~= false
+	local pd = getPlayerDataRaw()
+	if not pd then return end
+	local dailyQuest = pd:FindFirstChild("DailyQuest")
+	if not dailyQuest then return end
+	local action = useClaimAll and "ClaimAll" or "Claim"
+	for _, quest in ipairs(dailyQuest:GetChildren()) do
+		pcall(function() getRemote().QuestEvent:FireServer(action, quest) end)
+	end
 end
 
 -- Открытие UI по дампу (см. DUMP_FINDINGS.md). Merchant открывается сервером — пробуем только .Enabled
@@ -2716,6 +2729,42 @@ do
 	enableAntiAFK()
 end
 
+-- ---- Misc: AutoQuest ----
+do
+	_G.AutoQuestEnabled = false
+	_G.AutoQuestTask = nil
+	_G.AutoQuestInterval = 5
+	local function startAutoQuestLoop()
+		if _G.AutoQuestTask then task.cancel(_G.AutoQuestTask) _G.AutoQuestTask = nil end
+		_G.AutoQuestTask = task.spawn(function()
+			while _G.AutoQuestEnabled do
+				task.wait(_G.AutoQuestInterval)
+				if not _G.AutoQuestEnabled then break end
+				Game.ClaimAllDailyQuests(true)
+			end
+		end)
+	end
+	local s = Tabs.Misc:AddSection("AutoQuest", "clipboard-list")
+	s:AddParagraph({ Title = "AutoQuest", Content = "Auto-claim daily quests. ClaimAll for each quest, interval configurable." })
+	s:AddToggle("AutoQuestToggle", { Title = "Enable AutoQuest", Default = false }):OnChanged(function(v)
+		_G.AutoQuestEnabled = v
+		if _G.AutoQuestTask then task.cancel(_G.AutoQuestTask) _G.AutoQuestTask = nil end
+		if v then
+			Game.ClaimAllDailyQuests(true)
+			_G.AutoQuestInterval = Fluent.Options and Fluent.Options.AutoQuestInterval and Fluent.Options.AutoQuestInterval.Value or 5
+			startAutoQuestLoop()
+		end
+	end)
+	s:AddSlider("AutoQuestInterval", { Title = "Interval (sec)", Min = 3, Max = 60, Default = 5 }):OnChanged(function(v)
+		_G.AutoQuestInterval = v
+		if _G.AutoQuestEnabled then startAutoQuestLoop() end
+	end)
+	s:AddButton({ Title = "Claim All Now", Description = "One-time claim all daily quests", Callback = function()
+		Game.ClaimAllDailyQuests(true)
+		Fluent:Notify({ Title = "AutoQuest", Content = "Claimed", Duration = 2 })
+	end })
+end
+
 -- ---- Misc: Shiny Normalize ----
 do
 	local s = Tabs.Misc:AddSection("Shiny Normalize", "sparkles")
@@ -3004,6 +3053,19 @@ local function applyConfigState()
 		if opts.AutoTraitReroll and opts.AutoTraitReroll.Value then
 			_G.AutoTraitRerollEnabled = true
 			autoTraitRerollConnection = RunService.Heartbeat:Connect(function() task.wait(1.2) runAutoTraitReroll() end)
+		end
+		if opts.AutoQuestToggle and opts.AutoQuestToggle.Value then
+			if _G.AutoQuestTask then task.cancel(_G.AutoQuestTask) _G.AutoQuestTask = nil end
+			_G.AutoQuestEnabled = true
+			_G.AutoQuestInterval = (opts.AutoQuestInterval and opts.AutoQuestInterval.Value) or 5
+			Game.ClaimAllDailyQuests(true)
+			_G.AutoQuestTask = task.spawn(function()
+				while _G.AutoQuestEnabled do
+					task.wait(_G.AutoQuestInterval)
+					if not _G.AutoQuestEnabled then break end
+					Game.ClaimAllDailyQuests(true)
+				end
+			end)
 		end
 		if opts.RangerAutofarmToggle and opts.RangerAutofarmToggle.Value then
 			rangerAutofarmEnabled = true

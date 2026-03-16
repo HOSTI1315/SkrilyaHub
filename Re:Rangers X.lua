@@ -84,13 +84,51 @@ end)
 -- ============ ANTI-AFK ============
 local antiAFKActive = false
 local antiAFKIdledConn = nil
+local antiAFKTask = nil
+local antiAFKL1Task = nil
+
+local function antiAFKPulse()
+	pcall(function()
+		VirtualUser:CaptureController()
+		VirtualUser:ClickButton2(Vector2.new())
+	end)
+	pcall(function()
+		local cam = workspace.CurrentCamera
+		if cam then
+			VirtualUser:Button2Down(Vector2.new(0, 0), cam.CFrame)
+			task.wait(0.1)
+			VirtualUser:Button2Up(Vector2.new(0, 0), cam.CFrame)
+		end
+	end)
+end
+
+local function antiAFKL1Pulse()
+	pcall(function()
+		local keyCode = Enum.KeyCode.ButtonL1
+		local vim = game:GetService("VirtualInputManager")
+		vim:SendKeyEvent(true, keyCode, false, game)
+		task.wait(0.05)
+		vim:SendKeyEvent(false, keyCode, false, game)
+	end)
+end
 
 local function enableAntiAFK()
 	if antiAFKActive then return end
 	antiAFKActive = true
-	antiAFKIdledConn = LocalPlayer.Idled:Connect(function()
-		VirtualUser:CaptureController()
-		VirtualUser:ClickButton2(Vector2.new())
+	antiAFKIdledConn = LocalPlayer.Idled:Connect(antiAFKPulse)
+	-- Периодический keep-alive (каждые 60 сек) — на случай если Idled не срабатывает
+	antiAFKTask = task.spawn(function()
+		while antiAFKActive do
+			task.wait(60)
+			if antiAFKActive then antiAFKPulse() end
+		end
+	end)
+	-- ButtonL1 раз в 5 минут (executor: VirtualInputManager)
+	antiAFKL1Task = task.spawn(function()
+		while antiAFKActive do
+			task.wait(300)
+			if antiAFKActive then antiAFKL1Pulse() end
+		end
 	end)
 end
 
@@ -99,6 +137,14 @@ local function disableAntiAFK()
 	if antiAFKIdledConn then
 		antiAFKIdledConn:Disconnect()
 		antiAFKIdledConn = nil
+	end
+	if antiAFKTask then
+		task.cancel(antiAFKTask)
+		antiAFKTask = nil
+	end
+	if antiAFKL1Task then
+		task.cancel(antiAFKL1Task)
+		antiAFKL1Task = nil
 	end
 end
 
@@ -717,7 +763,7 @@ end
 function Game.CreateRoom(kind)
 	local r = getRemote()
 	if kind == "challenge" then
-		r.PlayRoomEvent:FireServer("Create", { CreateChallengeRoom = true })
+		r.PlayRoomEvent:FireServer(table.unpack({ "Create", { CreateChallengeRoom = true } }))
 	elseif kind == "raid" then
 		r.PlayRoomEvent:FireServer("Create", { CreateRaidRoom = true })
 	else
@@ -1506,7 +1552,8 @@ function Game.SetAutoJoin(enabled, filter)
 end
 
 function Game.CreateChallengeRoom()
-	getRemote().PlayRoomEvent:FireServer("Create", { CreateChallengeRoom = true })
+	local args = { "Create", { CreateChallengeRoom = true } }
+	getRemote().PlayRoomEvent:FireServer(table.unpack(args))
 end
 
 function Game.SubmitRoom()
@@ -2257,7 +2304,7 @@ do
 					Game.EnterMode("Fate Mode", true)
 				else
 					Game.CreateChallengeRoom()
-					task.wait(0.5)
+					task.wait(1)
 					Game.SetRoomMode(Options.AutoMode.Value or "Story")
 					Game.SetRoomWorld(Options.AutoWorld.Value)
 					Game.SetRoomChapter(getChapterInternalValue(Options.AutoMode.Value or "Story", Options.AutoChapter.Value))
@@ -2722,11 +2769,28 @@ end
 -- ---- Misc: Anti-AFK ----
 do
 	local s = Tabs.Misc:AddSection("Anti-AFK", "user-check")
-	s:AddParagraph({ Title = "Anti-AFK", Content = "Prevents Roblox idle kick during long autofarm." })
+	s:AddParagraph({ Title = "Anti-AFK", Content = "Prevents Roblox idle kick during long autofarm. Uses Idled + periodic keep-alive." })
 	s:AddToggle("AntiAFKToggle", { Title = "Enable Anti-AFK", Default = true }):OnChanged(function(v)
 		if v then enableAntiAFK() else disableAntiAFK() end
 	end)
 	enableAntiAFK()
+end
+
+-- ---- Misc: Shiny Normalize ----
+do
+	local s = Tabs.Misc:AddSection("Shiny Normalize", "sparkles")
+	s:AddParagraph({ Title = "Shiny Normalize", Content = "Opens Collection in ShinyNormalize mode. Select a Shiny unit to open the normalize UI (convert Shiny to normal for rewards)." })
+	s:AddButton({ Title = "Open Shiny Normalize UI", Description = "Open Collection in ShinyNormalize mode", Callback = function()
+		local gui = LocalPlayer:FindFirstChild("PlayerGui")
+		if not gui then Fluent:Notify({ Title = "Shiny Normalize", Content = "PlayerGui not found", Duration = 2 }) return end
+		local collection = gui:FindFirstChild("Collection")
+		if not collection then Fluent:Notify({ Title = "Shiny Normalize", Content = "Collection not found", Duration = 2 }) return end
+		local mode = collection:FindFirstChild("Mode")
+		if not mode or not mode:IsA("StringValue") then Fluent:Notify({ Title = "Shiny Normalize", Content = "Collection.Mode not found", Duration = 2 }) return end
+		mode.Value = "ShinyNormalize"
+		collection.Enabled = true
+		Fluent:Notify({ Title = "Shiny Normalize", Content = "Collection opened. Select a Shiny unit.", Duration = 3 })
+	end })
 end
 
 -- ---- Misc: AutoQuest ----
@@ -2762,23 +2826,6 @@ do
 	s:AddButton({ Title = "Claim All Now", Description = "One-time claim all daily quests", Callback = function()
 		Game.ClaimAllDailyQuests(true)
 		Fluent:Notify({ Title = "AutoQuest", Content = "Claimed", Duration = 2 })
-	end })
-end
-
--- ---- Misc: Shiny Normalize ----
-do
-	local s = Tabs.Misc:AddSection("Shiny Normalize", "sparkles")
-	s:AddParagraph({ Title = "Shiny Normalize", Content = "Opens Collection in ShinyNormalize mode. Select a Shiny unit to open the normalize UI (convert Shiny to normal for rewards)." })
-	s:AddButton({ Title = "Open Shiny Normalize UI", Description = "Open Collection in ShinyNormalize mode", Callback = function()
-		local gui = LocalPlayer:FindFirstChild("PlayerGui")
-		if not gui then Fluent:Notify({ Title = "Shiny Normalize", Content = "PlayerGui not found", Duration = 2 }) return end
-		local collection = gui:FindFirstChild("Collection")
-		if not collection then Fluent:Notify({ Title = "Shiny Normalize", Content = "Collection not found", Duration = 2 }) return end
-		local mode = collection:FindFirstChild("Mode")
-		if not mode or not mode:IsA("StringValue") then Fluent:Notify({ Title = "Shiny Normalize", Content = "Collection.Mode not found", Duration = 2 }) return end
-		mode.Value = "ShinyNormalize"
-		collection.Enabled = true
-		Fluent:Notify({ Title = "Shiny Normalize", Content = "Collection opened. Select a Shiny unit.", Duration = 3 })
 	end })
 end
 
@@ -2849,7 +2896,7 @@ local function applyConfigState()
 					if (opts.AutoMode and opts.AutoMode.Value) == "Ghoul Hunt" then Game.EnterMode("Fate Mode", true)
 					else
 						Game.CreateChallengeRoom()
-						task.wait(0.5)
+						task.wait(1)
 						local mode = opts.AutoMode and opts.AutoMode.Value or "Story"
 						Game.SetRoomMode(mode)
 						Game.SetRoomWorld(opts.AutoWorld and opts.AutoWorld.Value)

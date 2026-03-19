@@ -7,7 +7,7 @@ if g.SkrilyaHubLoaded and not ALLOW_REINJECT then
 end
 g.SkrilyaHubLoaded = true
 
-print("ver. LOHgarika")
+print("ver. FanMirkaViebalSoakyAutoFarmallnigers")
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -2228,7 +2228,7 @@ local Options = Fluent.Options
 -- ---- Constants ----
 local MODES = { "Ghoul Hunt", "Story", "Ranger Stage", "Raids Stage", "Misc Stage" }
 local WORLDS = { "Namek", "Naruto", "OnePiece", "SAO", "TokyoGhoul", "Dungeon", "BattleArena", "KurumiBossEvent", "JJK", "Calamity" }
-local DIFFICULTIES = { "Normal", "Hard", "Easy" }
+local DIFFICULTIES = { "Normal", "Hard", "Easy", "Nightmare", "Hell", "Insane" }
 local CHAPTERS = { "Chapter 1", "Chapter 2", "Chapter 3", "Chapter 4", "Chapter 5" }
 local RAID_WORLDS = { "JJKRaid" }
 local RAID_CHAPTERS = { "JJK_Raid_Chapter1", "JJK_Raid_Chapter2" }
@@ -2236,11 +2236,32 @@ local MISC_WORLDS = { "Calamity" }
 local MISC_CHAPTERS = { "Shibua Incident", "Great Cataclysm" }
 local MISC_CHAPTER_TO_INTERNAL = { ["Shibua Incident"] = "Calamity_Chapter1", ["Great Cataclysm"] = "Calamity_Chapter2" }
 
-local function getChapterInternalValue(mode, displayValue)
+local function getChapterInternalValue(mode, world, displayValue)
+	if displayValue == nil then return nil end
 	if mode == "Misc Stage" and MISC_CHAPTER_TO_INTERNAL[displayValue] then
 		return MISC_CHAPTER_TO_INTERNAL[displayValue]
 	end
+	-- Story/Ranger обычно ожидают внутренние ключи уровня (например Namek_Chapter1),
+	-- а не "Chapter 1". Ghoul Hunt не использует Chapter/World.
+	if typeof(world) == "string" then
+		local n = tostring(displayValue):match("^Chapter%s+(%d+)$")
+		if n then
+			return world .. "_Chapter" .. n
+		end
+	end
 	return displayValue
+end
+
+local function safeSetDropdownValue(dropdown, values, preferred)
+	if not dropdown or not dropdown.SetValue or type(values) ~= "table" or #values == 0 then return end
+	local pick = preferred
+	if pick == nil then pick = values[1] end
+	local ok = false
+	for _, v in ipairs(values) do
+		if v == pick then ok = true break end
+	end
+	if not ok then pick = values[1] end
+	pcall(function() dropdown:SetValue(pick) end)
 end
 
 local function getWorldOptionsForMode(mode)
@@ -2274,7 +2295,8 @@ do
 	s:AddDropdown("AutoWorld", { Title = "World (Story/Raid)", Values = WORLDS, Multi = false, Default = "Namek" }):OnChanged(function(v) autoJoinFilter.world = (v ~= "—") and v or nil end)
 	s:AddDropdown("AutoChapter", { Title = "Chapter (Story/Raid)", Values = CHAPTERS, Multi = false, Default = "Chapter 1" }):OnChanged(function(v)
 		local mode = Options.AutoMode and Options.AutoMode.Value
-		local internal = getChapterInternalValue(mode, v)
+		local world = Options.AutoWorld and Options.AutoWorld.Value
+		local internal = getChapterInternalValue(mode, world, v)
 		autoJoinFilter.chapter = (internal ~= "—") and internal or nil
 	end)
 	s:AddDropdown("AutoDiff", { Title = "Difficulty", Values = DIFFICULTIES, Multi = false, Default = "Normal" }):OnChanged(function(v) autoJoinFilter.difficulty = v end)
@@ -2282,7 +2304,7 @@ do
 		autoJoinFilter.mode = Options.AutoMode.Value or "Story"
 		autoJoinFilter.world = Options.AutoWorld.Value
 		local mode = Options.AutoMode.Value or "Story"
-		autoJoinFilter.chapter = getChapterInternalValue(mode, Options.AutoChapter.Value)
+		autoJoinFilter.chapter = getChapterInternalValue(mode, Options.AutoWorld and Options.AutoWorld.Value, Options.AutoChapter.Value)
 		autoJoinFilter.difficulty = Options.AutoDiff.Value or "Normal"
 		if autoJoinFilter.world == "—" then autoJoinFilter.world = nil end
 		if autoJoinFilter.chapter == "—" then autoJoinFilter.chapter = nil end
@@ -2877,12 +2899,18 @@ local function applyConfigState()
 		local mode = (opts.AutoMode and opts.AutoMode.Value) or "Story"
 		local worlds = getWorldOptionsForMode(mode)
 		local chapters = getChapterOptionsForMode(mode)
-		if opts.AutoWorld and opts.AutoWorld.SetValues then opts.AutoWorld:SetValues(worlds) opts.AutoWorld:SetValue(opts.AutoWorld.Value or worlds[1]) end
-		if opts.AutoChapter and opts.AutoChapter.SetValues then opts.AutoChapter:SetValues(chapters) opts.AutoChapter:SetValue(opts.AutoChapter.Value or chapters[1]) end
+		if opts.AutoWorld and opts.AutoWorld.SetValues then
+			opts.AutoWorld:SetValues(worlds)
+			safeSetDropdownValue(opts.AutoWorld, worlds, opts.AutoWorld.Value)
+		end
+		if opts.AutoChapter and opts.AutoChapter.SetValues then
+			opts.AutoChapter:SetValues(chapters)
+			safeSetDropdownValue(opts.AutoChapter, chapters, opts.AutoChapter.Value)
+		end
 		if opts.AutoJoinToggle and opts.AutoJoinToggle.Value then
 			autoJoinFilter.mode = mode
 			autoJoinFilter.world = opts.AutoWorld and opts.AutoWorld.Value
-			autoJoinFilter.chapter = getChapterInternalValue(mode, opts.AutoChapter and opts.AutoChapter.Value)
+			autoJoinFilter.chapter = getChapterInternalValue(mode, opts.AutoWorld and opts.AutoWorld.Value, opts.AutoChapter and opts.AutoChapter.Value)
 			autoJoinFilter.difficulty = (opts.AutoDiff and opts.AutoDiff.Value) or "Normal"
 			if autoJoinFilter.world == "—" then autoJoinFilter.world = nil end
 			if autoJoinFilter.chapter == "—" then autoJoinFilter.chapter = nil end
@@ -2900,7 +2928,7 @@ local function applyConfigState()
 						local mode = opts.AutoMode and opts.AutoMode.Value or "Story"
 						Game.SetRoomMode(mode)
 						Game.SetRoomWorld(opts.AutoWorld and opts.AutoWorld.Value)
-						Game.SetRoomChapter(getChapterInternalValue(mode, opts.AutoChapter and opts.AutoChapter.Value))
+						Game.SetRoomChapter(getChapterInternalValue(mode, opts.AutoWorld and opts.AutoWorld.Value, opts.AutoChapter and opts.AutoChapter.Value))
 						Game.SetRoomDifficulty(opts.AutoDiff and opts.AutoDiff.Value)
 						task.wait(0.3)
 						Game.SubmitRoom()
